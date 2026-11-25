@@ -77,27 +77,32 @@ setDefaultEngineContext(ENGINE_CONTEXT);
 interface InitialRoute {
   mode: ViewMode;
   roomCode?: string;
+  tvJoinMode: 'host' | 'guest';
 }
 
 function readInitialRoute(): InitialRoute {
   if (typeof window === 'undefined') {
-    return { mode: 'landing' };
+    return { mode: 'landing', tvJoinMode: 'host' };
   }
   const params = new URLSearchParams(window.location.search);
   const rawRoom = params.get('room');
+  const rawMode = params.get('mode')?.toLowerCase();
+
   if (rawRoom) {
     const clean = sanitizeRoomCode(rawRoom);
     if (isValidRoomCode(clean)) {
-      return { mode: 'tablet', roomCode: clean };
+      if (rawMode === 'tv') {
+        return { mode: 'tv', roomCode: clean, tvJoinMode: 'guest' };
+      }
+      return { mode: 'tablet', roomCode: clean, tvJoinMode: 'host' };
     }
   }
 
-  const rawMode = params.get('mode')?.toLowerCase();
   if (rawMode === 'tv' || rawMode === 'tablet' || rawMode === 'mirror') {
-    return { mode: rawMode };
+    return { mode: rawMode, tvJoinMode: 'host' };
   }
 
-  return { mode: 'landing' };
+  return { mode: 'landing', tvJoinMode: 'host' };
 }
 
 function DrawnCardVisual({ card }: { card: Card }) {
@@ -767,22 +772,29 @@ export function App() {
   const [initialRoomCode, setInitialRoomCode] = useState<string | undefined>(
     initialRoute.roomCode
   );
+  const [tvJoinMode, setTvJoinMode] = useState<'host' | 'guest'>(
+    initialRoute.tvJoinMode
+  );
 
   // Update SPA document title on view transitions (accessibility 2.4.2)
   useEffect(() => {
     const titles: Record<ViewMode, string> = {
       landing: 'Candyland Family Adventure',
-      tv: 'TV Host Board | Candyland Family Adventure',
+      tv:
+        tvJoinMode === 'guest'
+          ? 'Synced Guest TV | Candyland Family Adventure'
+          : 'TV Host Board | Candyland Family Adventure',
       tablet: 'Tablet Controller | Candyland Family Adventure',
       mirror: 'Play Together | Candyland Family Adventure',
     };
     document.title = titles[viewMode];
-  }, [viewMode]);
+  }, [viewMode, tvJoinMode]);
 
   const handleExitToLanding = useCallback(() => {
     soundEngine.stopVoice();
     soundEngine.stopBgm();
     setInitialRoomCode(undefined);
+    setTvJoinMode('host');
     setViewMode('landing');
     if (typeof window !== 'undefined' && window.location.search) {
       const cleanUrl = `${window.location.pathname}${window.location.hash}`;
@@ -793,7 +805,17 @@ export function App() {
   const handleSelectMode = useCallback((mode: Exclude<ViewMode, 'landing'>) => {
     void soundEngine.unlock();
     soundEngine.playButtonTap();
+    setInitialRoomCode(undefined);
+    setTvJoinMode('host');
     setViewMode(mode);
+  }, []);
+
+  const handleJoinGuestTv = useCallback(() => {
+    void soundEngine.unlock();
+    soundEngine.playButtonTap();
+    setInitialRoomCode(undefined);
+    setTvJoinMode('guest');
+    setViewMode('tv');
   }, []);
 
   return (
@@ -801,6 +823,7 @@ export function App() {
       {viewMode === 'landing' && (
         <LandingScreen
           onSelectMode={handleSelectMode}
+          onJoinGuestTv={handleJoinGuestTv}
           isFirebaseConfigured={isFirebaseConfigured}
         />
       )}
@@ -808,6 +831,7 @@ export function App() {
       {viewMode === 'tv' && (
         <TvHostView
           initialRoomCode={initialRoomCode}
+          joinMode={tvJoinMode}
           onExit={handleExitToLanding}
         />
       )}

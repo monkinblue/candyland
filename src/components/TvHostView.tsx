@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
+  ArrowLeft,
+  Check,
   Crown,
   LogOut,
   Maximize2,
@@ -9,9 +11,11 @@ import {
   Play,
   QrCode,
   RotateCcw,
+  Share2,
   Sparkles,
   Tablet,
   Trophy,
+  Tv,
   Users,
   Volume2,
   VolumeX,
@@ -30,10 +34,12 @@ import { createPlayersFromCharacters } from '../engine/rules';
 import {
   cleanupExpiredFirebaseRooms,
   createRoom,
+  isValidRoomCode,
   joinRoom,
   leaveRoom,
   sanitizeRoomCode,
   useGameRoom,
+  type SyncRole,
 } from '../services/firebaseSync';
 import { soundEngine, type AudioEngineState } from '../audio/soundEngine';
 import {
@@ -53,8 +59,10 @@ import { useToddlerTap } from '../utils/toddlerTap';
 import './TvHostView.css';
 
 export interface TvHostViewProps {
-  /** Optional pre-existing room code; if omitted, a fresh kid-friendly code is created. */
+  /** Optional pre-existing room code; auto-joins in guest mode or re-attaches in host mode. */
   initialRoomCode?: string;
+  /** 'host' creates & runs the authoritative TV room; 'guest' syncs to an existing remote TV room. */
+  joinMode?: 'host' | 'guest';
   /** Called when the user exits back to the Landing Screen. */
   onExit: () => void;
 }
@@ -273,10 +281,15 @@ function handleSpatialKeyDown(
   chosen.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-function getJoinUrl(roomCode: string): { fullUrl: string; displayHost: string } {
+function getJoinUrl(roomCode: string): {
+  fullUrl: string;
+  remoteTvUrl: string;
+  displayHost: string;
+} {
   if (typeof window === 'undefined') {
     return {
       fullUrl: `https://emma-dawson.com/?room=${roomCode}`,
+      remoteTvUrl: `https://emma-dawson.com/?room=${roomCode}&mode=tv`,
       displayHost: 'emma-dawson.com',
     };
   }
@@ -284,6 +297,7 @@ function getJoinUrl(roomCode: string): { fullUrl: string; displayHost: string } 
   const host = window.location.host;
   return {
     fullUrl: `${origin}/?room=${roomCode}`,
+    remoteTvUrl: `${origin}/?room=${roomCode}&mode=tv`,
     displayHost: host.includes('emma-dawson.com') ? 'emma-dawson.com' : host,
   };
 }
@@ -346,13 +360,34 @@ function renderCardArtwork(card: Card) {
 
 export const TvHostView: React.FC<TvHostViewProps> = ({
   initialRoomCode,
+  joinMode = 'host',
   onExit,
 }) => {
+  const isGuestTv = joinMode === 'guest';
+  const syncRole: SyncRole = isGuestTv ? 'guest-tv' : 'host';
+  const initialCleanCode = initialRoomCode
+    ? sanitizeRoomCode(initialRoomCode)
+    : '';
+
   const [roomCode, setRoomCode] = useState<string | null>(
-    initialRoomCode ? sanitizeRoomCode(initialRoomCode) : null
+    !isGuestTv && initialCleanCode ? initialCleanCode : null
   );
-  const [creatingRoom, setCreatingRoom] = useState<boolean>(true);
+  const [creatingRoom, setCreatingRoom] = useState<boolean>(!isGuestTv);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Guest TV 4-box room join state
+  const [guestCodeBoxes, setGuestCodeBoxes] = useState<
+    [string, string, string, string]
+  >([
+    initialCleanCode[0] ?? '',
+    initialCleanCode[1] ?? '',
+    initialCleanCode[2] ?? '',
+    initialCleanCode[3] ?? '',
+  ]);
+  const [guestJoining, setGuestJoining] = useState<boolean>(false);
+  const [guestJoinError, setGuestJoinError] = useState<string | null>(null);
+  const [copiedRemoteLink, setCopiedRemoteLink] = useState<boolean>(false);
+
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [showCharSelect, setShowCharSelect] = useState<boolean>(false);
   const [playMiniGameOnTv, setPlayMiniGameOnTv] = useState<boolean>(false);
@@ -361,14 +396,25 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
   );
   const [failedAvatars, setFailedAvatars] = useState<Record<string, boolean>>({});
 
-  // Native modal <dialog> refs (QR Info modal & Leave Confirmation modal)
+  // Native modal <dialog> & input refs
   const qrDialogRef = useRef<HTMLDialogElement | null>(null);
   const leaveDialogRef = useRef<HTMLDialogElement | null>(null);
   const lobbyActionsRef = useRef<HTMLDivElement | null>(null);
   const victoryActionsRef = useRef<HTMLDivElement | null>(null);
+  const guestBoxRefs = useRef<Array<HTMLInputElement | null>>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const guestAutoJoinRef = useRef<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
 
   const qrTitleId = useId();
   const leaveTitleId = useId();
+  const guestJoinTitleId = useId();
+  const guestJoinHintId = useId();
+  const guestJoinErrorId = useId();
 
   // Deduplication refs for TV-driven transitions & audio
   const lastSpokenEventRef = useRef<string | null>(null);
@@ -378,7 +424,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
   const completedAiMiniGameIdRef = useRef<string | null>(null);
   const completedAiActionIdRef = useRef<string | null>(null);
 
-  // Configure audio engine for TV Host (BGM + Narrator Voiceovers + SFX)
+  // Configure audio engine for TV (full BGM + ElevenLabs Narrator Voiceovers + SFX on both Primary & Guest TV)
   useEffect(() => {
     soundEngine.setAudioMode('tv');
     soundEngine.startBgm();
@@ -395,28 +441,79 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     const unsub = soundEngine.subscribe(setAudioState);
     return () => {
       unsub();
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
       soundEngine.setCutsceneDucking(false);
       soundEngine.stopVoice();
       soundEngine.stopBgm();
     };
   }, []);
 
-  // Create or re-attach room on mount
+  // Guest TV join helper (never overwrites hostConnected or runs 24h cleanup)
+  const attemptGuestTvJoin = useCallback(async (rawCode: string) => {
+    const clean = sanitizeRoomCode(rawCode);
+    if (!isValidRoomCode(clean) || clean.length < 4) {
+      setGuestJoinError('Please enter all 4 letters shown on the main TV.');
+      return;
+    }
+
+    setGuestJoining(true);
+    setGuestJoinError(null);
+    try {
+      const found = await joinRoom(clean, 'guest-tv');
+      if (!found) {
+        setGuestJoinError(
+          `Oops! We couldn't find room "${clean}". Check the 4 letters on the main TV and try again!`
+        );
+        soundEngine.playLicoriceSquish();
+        return;
+      }
+      soundEngine.playStarChime();
+      setRoomCode(found.roomCode);
+    } catch (err) {
+      setGuestJoinError(
+        err instanceof Error
+          ? err.message
+          : 'Could not connect to the TV room. Please try again.'
+      );
+    } finally {
+      setGuestJoining(false);
+    }
+  }, []);
+
+  // Guest TV auto-join when launched from `?room=CODE&mode=tv`
   useEffect(() => {
+    if (
+      !isGuestTv ||
+      initialCleanCode.length < 4 ||
+      guestAutoJoinRef.current === initialCleanCode
+    ) {
+      return;
+    }
+    guestAutoJoinRef.current = initialCleanCode;
+    void attemptGuestTvJoin(initialCleanCode);
+  }, [isGuestTv, initialCleanCode, attemptGuestTvJoin]);
+
+  // Primary Host: create or re-attach room on mount
+  useEffect(() => {
+    if (isGuestTv) {
+      setCreatingRoom(false);
+      return;
+    }
     let cancelled = false;
     const bootstrapRoom = async () => {
       setCreatingRoom(true);
       setInitError(null);
       try {
-        if (initialRoomCode) {
-          const clean = sanitizeRoomCode(initialRoomCode);
-          const existing = await joinRoom(clean, 'host');
+        if (initialCleanCode) {
+          const existing = await joinRoom(initialCleanCode, 'host');
           if (!cancelled) {
             if (existing) {
               setRoomCode(existing.roomCode);
               void cleanupExpiredFirebaseRooms(existing.roomCode);
             } else {
-              const created = await createRoom({ roomCode: clean });
+              const created = await createRoom({ roomCode: initialCleanCode });
               if (!cancelled) setRoomCode(created.roomCode);
             }
           }
@@ -441,12 +538,14 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [initialRoomCode]);
+  }, [isGuestTv, initialCleanCode]);
 
-  const { room, connectionStatus, transportMode, actions } = useGameRoom(
-    roomCode,
-    'host'
-  );
+  const { room, loading, connectionStatus, transportMode, actions } =
+    useGameRoom(roomCode, syncRole);
+
+  // Authoritative host check: Primary TV drives all timers/progression;
+  // Guest TV stays purely reactive unless Primary Host disconnects.
+  const isAuthoritativeHost = !isGuestTv || !room?.hostConnected;
 
   // Generate high-contrast scannable QR code whenever roomCode changes
   const joinInfo = useMemo(
@@ -539,7 +638,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
 
   // Authoritative TV timing: calm, voice-aware card reveal before resolving movement/overlays
   const cardRevealKey =
-    room && room.phase === 'card-drawn' && room.currentCard
+    isAuthoritativeHost && room && room.phase === 'card-drawn' && room.currentCard
       ? `${room.lastEventId ?? room.createdAt}:${room.currentCard.id}`
       : null;
   const cardRevealIsSpecial = Boolean(
@@ -591,7 +690,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
       leaveDialog.returnValue = '';
       if (choice === 'leave') {
         if (roomCode) {
-          void leaveRoom(roomCode, 'host');
+          void leaveRoom(roomCode, syncRole);
         }
         onExit();
       }
@@ -605,7 +704,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
       leaveDialog?.removeEventListener('cancel', handleLeaveCancel);
       leaveDialog?.removeEventListener('close', handleLeaveClose);
     };
-  }, [hasMountedRoomDialogs, roomCode, onExit]);
+  }, [hasMountedRoomDialogs, roomCode, syncRole, onExit]);
 
   const openQrDialog = useCallback(() => {
     soundEngine.playButtonTap();
@@ -709,10 +808,102 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     room?.phase !== 'waiting-draw' || isCurrentPlayerAi
   );
 
+  const handleCopyRemoteTvLink = useCallback(() => {
+    if (!joinInfo) return;
+    soundEngine.playButtonTap();
+    const url = joinInfo.remoteTvUrl;
+    const markCopied = () => {
+      setCopiedRemoteLink(true);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedRemoteLink(false);
+      }, 2500);
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      void navigator.clipboard.writeText(url).then(markCopied).catch(() => {
+        markCopied();
+      });
+      return;
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+      markCopied();
+    } catch {
+      markCopied();
+    }
+  }, [joinInfo]);
+
+  const handleGuestBoxChange = (index: number, rawValue: string) => {
+    setGuestJoinError(null);
+    const cleaned = rawValue.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (cleaned.length > 1) {
+      const chars = cleaned.slice(0, 4).split('');
+      const next: [string, string, string, string] = [
+        chars[0] ?? '',
+        chars[1] ?? '',
+        chars[2] ?? '',
+        chars[3] ?? '',
+      ];
+      setGuestCodeBoxes(next);
+      const focusIdx = Math.min(3, chars.length);
+      guestBoxRefs.current[focusIdx]?.focus();
+      return;
+    }
+
+    const next: [string, string, string, string] = [...guestCodeBoxes] as [
+      string,
+      string,
+      string,
+      string,
+    ];
+    next[index] = cleaned;
+    setGuestCodeBoxes(next);
+
+    if (cleaned && index < 3) {
+      guestBoxRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleGuestBoxKeyDown = (
+    index: number,
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === 'Backspace' && !guestCodeBoxes[index] && index > 0) {
+      event.preventDefault();
+      const next: [string, string, string, string] = [...guestCodeBoxes] as [
+        string,
+        string,
+        string,
+        string,
+      ];
+      next[index - 1] = '';
+      setGuestCodeBoxes(next);
+      guestBoxRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleGuestJoinSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    soundEngine.playButtonTap();
+    void attemptGuestTvJoin(guestCodeBoxes.join(''));
+  };
+
   // Authoritative TV AI Turn Automation (e.g. Gnome AI Buddy) — calm, voice-aware pacing
   // 1) Auto-draw card after min 1800ms AND narrator turn announcement finishes + 500ms breath
   const aiDrawKey =
-    room && room.phase === 'waiting-draw' && isCurrentPlayerAi
+    isAuthoritativeHost && room && room.phase === 'waiting-draw' && isCurrentPlayerAi
       ? `${room.turnNumber}:${room.currentPlayerIndex}:${room.lastEventId ?? ''}`
       : null;
 
@@ -734,7 +925,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
 
   // 2) Auto-simulate calm AI mini-game: wait for intro voice + warm-up, tick every 620ms, 1300ms finale breath
   const aiMiniGameId =
-    room?.phase === 'minigame' && isMiniGameAi && room.miniGame
+    isAuthoritativeHost && room?.phase === 'minigame' && isMiniGameAi && room.miniGame
       ? room.miniGame.id
       : null;
   const aiMiniGameTarget = room?.miniGame?.targetScore ?? 6;
@@ -790,7 +981,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
 
   // 3) Auto-resolve Action Card after intro voice finishes + 3800ms calm reading time (~70% complete, ~30% skip)
   const aiActionCardId =
-    room?.phase === 'action-card' && isActionCardAi && room.actionCard
+    isAuthoritativeHost && room?.phase === 'action-card' && isActionCardAi && room.actionCard
       ? room.actionCard.id
       : null;
 
@@ -822,15 +1013,196 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     [players]
   );
 
-  if (creatingRoom || !room) {
+  // Guest TV Join Screen (when joinMode === 'guest' and not yet attached to a room)
+  if (isGuestTv && !roomCode) {
+    const guestEnteredCode = guestCodeBoxes.join('');
+    return (
+      <main className="tv-host-root tv-guest-join-page">
+        <header className="tv-guest-join-topbar">
+          <button
+            type="button"
+            className="tv-btn tv-btn-ghost tv-btn-sm"
+            onClick={() => {
+              soundEngine.playButtonTap();
+              onExit();
+            }}
+          >
+            <ArrowLeft size={22} aria-hidden="true" />
+            <span>Back to Home</span>
+          </button>
+
+          <div className="tv-lobby-top-controls">
+            <button
+              type="button"
+              className="tv-icon-btn"
+              aria-label={audioState.muted ? 'Unmute TV audio' : 'Mute TV audio'}
+              aria-pressed={audioState.muted}
+              onClick={() => soundEngine.toggleMute()}
+            >
+              {audioState.muted ? (
+                <VolumeX size={24} aria-hidden="true" />
+              ) : (
+                <Volume2 size={24} aria-hidden="true" />
+              )}
+            </button>
+
+            {fullscreenSupported && (
+              <button
+                type="button"
+                className="tv-icon-btn"
+                aria-label={
+                  isFullscreen ? 'Exit full screen' : 'Enter full screen'
+                }
+                aria-pressed={isFullscreen}
+                onClick={handleToggleFullscreen}
+              >
+                {isFullscreen ? (
+                  <Minimize2 size={22} aria-hidden="true" />
+                ) : (
+                  <Maximize2 size={22} aria-hidden="true" />
+                )}
+              </button>
+            )}
+          </div>
+        </header>
+
+        <section
+          className="tv-guest-join-card"
+          aria-labelledby={guestJoinTitleId}
+        >
+          <div className="tv-guest-join-kicker">
+            <Tv size={22} aria-hidden="true" />
+            <span>SYNCED GUEST TV · PLAY ACROSS HOUSES</span>
+          </div>
+
+          <h1 id={guestJoinTitleId} className="tv-guest-join-title">
+            Join a Family TV Room
+          </h1>
+
+          <p id={guestJoinHintId} className="tv-guest-join-hint">
+            Enter the 4-letter Room Code shown on the main family TV to mirror
+            the live Candyland board, cutscenes, and narrator right here!
+          </p>
+
+          <form
+            className="tv-guest-join-form"
+            onSubmit={handleGuestJoinSubmit}
+            noValidate
+          >
+            <fieldset className="tv-guest-code-fieldset">
+              <legend className="tv-visually-hidden">
+                Four-letter family TV room code
+              </legend>
+              <div className="tv-guest-code-boxes">
+                {guestCodeBoxes.map((char, idx) => (
+                  <div key={idx} className="tv-guest-code-slot">
+                    <label
+                      htmlFor={`tv-guest-letter-${idx + 1}`}
+                      className="tv-visually-hidden"
+                    >
+                      Room code letter {idx + 1} of 4
+                    </label>
+                    <input
+                      ref={(el) => {
+                        guestBoxRefs.current[idx] = el;
+                      }}
+                      id={`tv-guest-letter-${idx + 1}`}
+                      type="text"
+                      inputMode="text"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      maxLength={4}
+                      required
+                      autoFocus={idx === 0}
+                      value={char}
+                      aria-describedby={
+                        guestJoinError
+                          ? `${guestJoinHintId} ${guestJoinErrorId}`
+                          : guestJoinHintId
+                      }
+                      aria-invalid={Boolean(guestJoinError)}
+                      className={`tv-guest-code-input ${char ? 'has-char' : ''}`}
+                      onChange={(e) => handleGuestBoxChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleGuestBoxKeyDown(idx, e)}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+
+            {guestJoinError && (
+              <p
+                id={guestJoinErrorId}
+                role="alert"
+                className="tv-guest-join-error"
+              >
+                {guestJoinError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="tv-btn tv-btn-start tv-guest-submit-btn"
+              disabled={guestJoining || guestEnteredCode.length < 4}
+            >
+              <Tv size={28} aria-hidden="true" />
+              <span>
+                {guestJoining ? 'Connecting to Family TV...' : 'Join TV Board →'}
+              </span>
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (creatingRoom || loading || !room) {
+    const guestRoomEnded = isGuestTv && Boolean(roomCode) && !loading && !room;
     return (
       <main className="tv-host-root tv-loading-screen">
         <div className="tv-loading-card">
           <div className="tv-loading-spinner" aria-hidden="true">
             🍭
           </div>
-          <h1>Setting Up Candyland TV Board...</h1>
-          {initError ? (
+          <h1>
+            {guestRoomEnded
+              ? `Room ${roomCode} Has Ended`
+              : isGuestTv
+                ? `Joining Family TV Room ${roomCode ?? ''}...`
+                : 'Setting Up Candyland TV Board...'}
+          </h1>
+          {guestRoomEnded ? (
+            <div className="tv-error-box">
+              <p>
+                The main TV host closed room <strong>{roomCode}</strong>. Enter a
+                new code to join the next game!
+              </p>
+              <div className="tv-modal-actions">
+                <button
+                  type="button"
+                  className="tv-btn tv-btn-secondary"
+                  onClick={() => {
+                    soundEngine.playButtonTap();
+                    setRoomCode(null);
+                    setGuestCodeBoxes(['', '', '', '']);
+                    setGuestJoinError(null);
+                  }}
+                >
+                  Enter Another Code
+                </button>
+                <button
+                  type="button"
+                  className="tv-btn tv-btn-ghost"
+                  onClick={onExit}
+                >
+                  Back to Home
+                </button>
+              </div>
+            </div>
+          ) : initError ? (
             <div role="alert" className="tv-error-box">
               <p>{initError}</p>
               <button
@@ -842,7 +1214,11 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
               </button>
             </div>
           ) : (
-            <p>Preparing your magical 4-letter Room Code and Candy Castle!</p>
+            <p>
+              {isGuestTv
+                ? 'Syncing live with the family Candyland board across houses!'
+                : 'Preparing your magical 4-letter Room Code and Candy Castle!'}
+            </p>
           )}
         </div>
       </main>
@@ -895,8 +1271,12 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
           cutscene={room.cutscene}
           activityLog={room.phase !== 'lobby' ? room.activityLog : undefined}
           onHopStep={handleHopStep}
-          onMovementComplete={handleMovementComplete}
-          onCutsceneComplete={handleCutsceneComplete}
+          onMovementComplete={
+            isAuthoritativeHost ? handleMovementComplete : undefined
+          }
+          onCutsceneComplete={
+            isAuthoritativeHost ? handleCutsceneComplete : undefined
+          }
         />
       </main>
 
@@ -924,12 +1304,20 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
               <div className="tv-lobby-brand">
                 <span className="tv-lobby-kicker">
                   <Sparkles size={20} aria-hidden="true" />
-                  GOOGLE TV BIG-SCREEN HOST
+                  {isGuestTv
+                    ? 'SYNCED GUEST TV · PLAY ACROSS HOUSES'
+                    : 'GOOGLE TV BIG-SCREEN HOST'}
                 </span>
                 <h1 className="tv-lobby-title">Candyland Family Adventure</h1>
               </div>
 
               <div className="tv-lobby-top-controls">
+                {isGuestTv && (
+                  <span className="tv-guest-badge">
+                    <Tv size={18} aria-hidden="true" />
+                    <span>Synced Guest TV</span>
+                  </span>
+                )}
                 <span
                   className={`tv-sync-pill ${
                     isOnline
@@ -1057,6 +1445,25 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                           : 'Waiting for Pixel Tablet (or play right from TV!)'}
                       </span>
                     </div>
+
+                    <button
+                      type="button"
+                      className={`tv-share-link-btn ${
+                        copiedRemoteLink ? 'is-copied' : ''
+                      }`}
+                      onClick={handleCopyRemoteTvLink}
+                    >
+                      {copiedRemoteLink ? (
+                        <Check size={18} aria-hidden="true" />
+                      ) : (
+                        <Share2 size={18} aria-hidden="true" />
+                      )}
+                      <span>
+                        {copiedRemoteLink
+                          ? 'Copied Remote TV Link!'
+                          : 'Share with Remote TV'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1283,6 +1690,13 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                     </span>
                   </button>
                 ))}
+
+              {isGuestTv && (
+                <span className="tv-hud-guest-pill" aria-label="Synced Guest TV mode">
+                  <Tv size={16} aria-hidden="true" />
+                  <span>Synced TV</span>
+                </span>
+              )}
 
               <button
                 type="button"
@@ -1666,6 +2080,24 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
             </p>
             <button
               type="button"
+              className={`tv-share-link-btn ${
+                copiedRemoteLink ? 'is-copied' : ''
+              }`}
+              onClick={handleCopyRemoteTvLink}
+            >
+              {copiedRemoteLink ? (
+                <Check size={18} aria-hidden="true" />
+              ) : (
+                <Share2 size={18} aria-hidden="true" />
+              )}
+              <span>
+                {copiedRemoteLink
+                  ? 'Copied Remote TV Link!'
+                  : 'Share with Remote TV'}
+              </span>
+            </button>
+            <button
+              type="button"
               className="tv-btn tv-btn-primary"
               autoFocus
               onClick={closeQrDialog}
@@ -1686,11 +2118,20 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
       >
         <div className="tv-modal-shell">
           <h1 id={leaveTitleId} className="tv-modal-title">
-            Leave Candyland TV Board?
+            {isGuestTv ? 'Leave Synced TV View?' : 'Leave Candyland TV Board?'}
           </h1>
           <p className="tv-modal-desc">
-            Returning to the home screen will disconnect this TV from room{' '}
-            <strong>{room.roomCode}</strong>.
+            {isGuestTv ? (
+              <>
+                Leaving only closes your synced TV view — the main host game in
+                room <strong>{room.roomCode}</strong> keeps playing!
+              </>
+            ) : (
+              <>
+                Returning to the home screen will disconnect this TV from room{' '}
+                <strong>{room.roomCode}</strong>.
+              </>
+            )}
           </p>
           <div className="tv-modal-actions">
             <button
@@ -1698,7 +2139,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
               className="tv-btn tv-btn-danger"
               onClick={() => handleLeaveDialogAction('leave')}
             >
-              Leave Game
+              {isGuestTv ? 'Leave View' : 'Leave Game'}
             </button>
             <button
               type="button"

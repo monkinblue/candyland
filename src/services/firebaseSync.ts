@@ -38,7 +38,8 @@ import type {
   PlayerState,
 } from '../types/game';
 
-export type SyncRole = 'host' | 'tablet' | 'mirror';
+export type ClientRole = 'host' | 'tablet' | 'guest-tv';
+export type SyncRole = ClientRole | 'mirror';
 export type ConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -946,6 +947,11 @@ export async function joinRoom(
   const existing = await getRoomSnapshot(code);
   if (!existing) return null;
 
+  // Guest TV joins read-only/synced without touching hostConnected or triggering cleanup
+  if (role === 'guest-tv') {
+    return existing;
+  }
+
   const updated = await mutateRoom(code, (current) => ({
     ...current,
     updatedAt: Date.now(),
@@ -964,9 +970,15 @@ export async function leaveRoom(
   const code = sanitizeRoomCode(roomCode);
   if (!isValidRoomCode(code)) return;
 
-  explicitlyLeavingRooms.add(code);
   cancelPendingMiniGameScore(code);
   cancelPendingPlayerWrites(code);
+
+  // Guest TV never overwrites hostConnected and NEVER deletes the room
+  if (role === 'guest-tv') {
+    return;
+  }
+
+  explicitlyLeavingRooms.add(code);
 
   const scheduleLeavingFlagClear = () => {
     if (typeof window !== 'undefined') {

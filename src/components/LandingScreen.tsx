@@ -16,6 +16,8 @@ import './LandingScreen.css';
 export interface LandingScreenProps {
   /** Called when the user chooses a play mode (TV Host, Tablet Controller, or Mirror Mode). */
   onSelectMode: (mode: Exclude<ViewMode, 'landing'>) => void;
+  /** Called when a remote household wants to join an existing TV room as a synced Guest TV. */
+  onJoinGuestTv?: () => void;
   /** Optional quick-join callback if a room code was entered directly. */
   onQuickJoinRoom?: (roomCode: string) => void;
   /** Whether online Firebase sync is configured (displays a helpful subtle pill). */
@@ -26,6 +28,7 @@ const PREVIEW_FAMILY = CHARACTERS;
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
   onSelectMode,
+  onJoinGuestTv,
   isFirebaseConfigured = false,
 }) => {
   const [hiddenTokens, setHiddenTokens] = useState<Record<string, boolean>>({});
@@ -134,6 +137,19 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
             <span className="mode-card-cta">Play Together Here →</span>
           </button>
         </section>
+
+        {onJoinGuestTv && (
+          <div className="landing-guest-tv-row">
+            <button
+              type="button"
+              className="landing-guest-tv-btn"
+              onClick={onJoinGuestTv}
+            >
+              <span aria-hidden="true">📺</span>
+              <span>Join an Existing TV Room (Play Across Houses!) →</span>
+            </button>
+          </div>
+        )}
 
         <footer className="landing-footer">
           <div className="landing-family-strip" aria-label="Starring the family">

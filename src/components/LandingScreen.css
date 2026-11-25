@@ -311,6 +311,52 @@
   box-shadow: 0 5px 14px rgba(59, 28, 50, 0.2);
 }
 
+/* Synced Guest TV Pill Row (Play Across Houses!) */
+.landing-guest-tv-row {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.landing-guest-tv-btn {
+  min-block-size: 46px;
+  padding: 0.6rem 1.45rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(0.92rem, 0.82rem + 0.42vw, 1.18rem);
+  color: #5b1d8c;
+  background: rgba(255, 255, 255, 0.94);
+  border: 3px solid rgba(155, 81, 224, 0.36);
+  box-shadow:
+    0 5px 0 rgba(107, 37, 181, 0.2),
+    0 10px 24px rgba(59, 28, 50, 0.12);
+  transition:
+    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.landing-guest-tv-btn:hover {
+  background: #fff3b0;
+  border-color: #ff8a2b;
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.landing-guest-tv-btn:active {
+  transform: translateY(2px);
+}
+
+.landing-guest-tv-btn:focus-visible {
+  outline: 4px solid #ffd43b;
+  outline-offset: 4px;
+}
+
 /* Family Avatar Strip Footer */
 .landing-footer {
   display: flex;
@@ -431,6 +477,12 @@
 
   .landing-footer {
     gap: 0.4rem;
+  }
+
+  .landing-guest-tv-btn {
+    min-block-size: 42px;
+    padding: 0.45rem 1.2rem;
+    font-size: 0.92rem;
   }
 
   .landing-family-avatar {
