@@ -1,0 +1,13 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$roomCode": {
+        ".read": "$roomCode.matches(/^[A-Z0-9]{4,8}$/)",
+        ".write": "$roomCode.matches(/^[A-Z0-9]{4,8}$/)",
+        ".validate": "!newData.exists() || (newData.hasChildren(['roomCode', 'phase']) && newData.child('roomCode').isString() && newData.child('phase').isString())"
+      }
+    }
+  }
+}

@@ -1,0 +1,422 @@
+/* ==========================================================================
+   MiniGameTvOverlay — Couch-Readable Google TV Spectator Overlay
+   Uses container queries, compositor-only transforms, and reduced-motion opt-in.
+   ========================================================================== */
+
+.mgtv-backdrop {
+  container: mgtv / inline-size;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay, 50);
+  display: grid;
+  place-items: center;
+  padding:
+    max(1.5rem, env(safe-area-inset-top, 0px))
+    max(2rem, env(safe-area-inset-right, 0px))
+    max(1.5rem, env(safe-area-inset-bottom, 0px))
+    max(2rem, env(safe-area-inset-left, 0px));
+  background: radial-gradient(
+    circle at center,
+    rgba(44, 16, 48, 0.56) 0%,
+    rgba(28, 10, 34, 0.78) 100%
+  );
+  backdrop-filter: blur(8px);
+}
+
+.mgtv-card {
+  position: relative;
+  width: min(1180px, 95%);
+  padding: clamp(1.5rem, 3.2cqi, 2.75rem);
+  border-radius: 42px;
+  background: linear-gradient(165deg, #ffffff 0%, #fff4fa 52%, #fff8e6 100%);
+  border: 8px solid #ffffff;
+  box-shadow:
+    0 0 0 6px var(--player-accent, #ff5e99),
+    0 28px 72px rgba(24, 8, 32, 0.48);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.1rem, 2.2cqi, 1.85rem);
+}
+
+.mgtv-card.is-goal-reached {
+  box-shadow:
+    0 0 0 8px #ffbf2e,
+    0 0 60px rgba(255, 191, 46, 0.6),
+    0 28px 72px rgba(24, 8, 32, 0.48);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mgtv-card {
+    animation: mgtv-enter 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
+/* Top Ribbon */
+.mgtv-ribbon {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 2rem;
+  border-radius: var(--radius-pill, 9999px);
+  background: linear-gradient(90deg, #ff3b5c 0%, #ff8a2b 50%, #ffbf2e 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2.2cqi, 1.6rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 4px solid #ffffff;
+  box-shadow: 0 8px 20px rgba(255, 59, 92, 0.34);
+}
+
+.mgtv-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(1rem, 2.8cqi, 2.5rem);
+}
+
+/* Left Column: Portrait + Name */
+.mgtv-player-col {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  min-inline-size: 0;
+}
+
+.mgtv-portrait-frame {
+  position: relative;
+  width: clamp(110px, 13cqi, 168px);
+  height: clamp(110px, 13cqi, 168px);
+  border-radius: 50%;
+  border: 7px solid var(--player-accent, #ff5e99);
+  background: #fff2f8;
+  box-shadow: 0 12px 28px rgba(74, 37, 17, 0.24);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.mgtv-portrait-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mgtv-portrait-fallback {
+  font-family: var(--font-display);
+  font-size: 4rem;
+  font-weight: 700;
+  color: var(--player-accent, #ff5e99);
+}
+
+.mgtv-game-emoji {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #ffd43b;
+  border: 4px solid #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  box-shadow: 0 6px 14px rgba(74, 37, 17, 0.25);
+}
+
+.mgtv-player-info {
+  min-inline-size: 0;
+}
+
+.mgtv-player-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 2.4cqi, 1.95rem);
+  font-weight: 700;
+  color: var(--player-accent, #e03177);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mgtv-game-title {
+  margin: 0.15rem 0 0.3rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 3.6cqi, 2.95rem);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.mgtv-game-subtitle {
+  margin: 0;
+  font-size: clamp(1rem, 1.9cqi, 1.45rem);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* Middle Column: Giant Animated Live Score */
+.mgtv-score-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem;
+  border-radius: 30px;
+  background: linear-gradient(180deg, #fff3f8 0%, #ffe6f2 100%);
+  border: 4px solid rgba(255, 94, 153, 0.35);
+}
+
+.mgtv-score-label {
+  font-family: var(--font-display);
+  font-size: clamp(0.9rem, 1.4cqi, 1.15rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.mgtv-score-value {
+  font-family: var(--font-display);
+  font-size: clamp(4rem, 9cqi, 7rem);
+  font-weight: 700;
+  line-height: 0.98;
+  color: var(--candy-pink-deep, #e03177);
+  text-shadow: 0 5px 0 rgba(255, 255, 255, 0.9), 0 10px 22px rgba(224, 49, 119, 0.25);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mgtv-score-value {
+    animation: mgtv-score-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+.mgtv-goal-pill {
+  margin-top: 0.35rem;
+  padding: 0.28rem 1rem;
+  border-radius: var(--radius-pill, 9999px);
+  background: #ffffff;
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 1.7cqi, 1.35rem);
+  color: var(--text-primary);
+  box-shadow: 0 3px 10px rgba(74, 37, 17, 0.1);
+}
+
+/* Right Column: Live Countdown Ring */
+.mgtv-timer-col {
+  position: relative;
+  width: clamp(128px, 14cqi, 168px);
+  height: clamp(128px, 14cqi, 168px);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.mgtv-ring-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.mgtv-ring-bg {
+  fill: #ffffff;
+  stroke: #f0dfea;
+  stroke-width: 14;
+}
+
+.mgtv-ring-fg {
+  fill: none;
+  stroke: #2ea8ff;
+  stroke-width: 14;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear, stroke 0.2s ease;
+}
+
+.mgtv-timer-col.is-urgent .mgtv-ring-fg {
+  stroke: #ff3b5c;
+}
+
+.mgtv-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+}
+
+.mgtv-ring-sec {
+  font-size: clamp(2.4rem, 4.8cqi, 3.6rem);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.mgtv-timer-col.is-urgent .mgtv-ring-sec {
+  color: #e01e37;
+}
+
+.mgtv-ring-unit {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.mgtv-ring-ready {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ff8a2b;
+  text-align: center;
+  padding: 0 0.75rem;
+}
+
+/* Bouncy Progress Meter Toward Win Star */
+.mgtv-meter-section {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.mgtv-meter-track {
+  position: relative;
+  flex: 1;
+  height: 36px;
+  border-radius: var(--radius-pill, 9999px);
+  background: #f2deea;
+  border: 4px solid #ffffff;
+  box-shadow: inset 0 4px 10px rgba(74, 37, 17, 0.16);
+}
+
+.mgtv-meter-fill {
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: var(--radius-pill, 9999px);
+  background: linear-gradient(90deg, #ff5e99 0%, #ff8a2b 48%, #ffd43b 100%);
+  transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.mgtv-meter-fill.is-won {
+  background: linear-gradient(90deg, #2ecc71 0%, #5be7c4 52%, #ffd43b 100%);
+}
+
+.mgtv-meter-runner-lane {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 0.16s ease-out;
+}
+
+.mgtv-meter-runner {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--player-accent, #ff5e99);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  box-shadow: 0 6px 14px rgba(74, 37, 17, 0.22);
+}
+
+.mgtv-win-star {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 1.1rem;
+  border-radius: var(--radius-pill, 9999px);
+  background: #fff4cc;
+  border: 4px solid #ffd43b;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.4cqi, 1.9rem);
+  font-weight: 700;
+  color: #b86f00;
+  flex-shrink: 0;
+}
+
+.mgtv-win-star.is-lit {
+  background: linear-gradient(180deg, #ffe066 0%, #ffbf2e 100%);
+  color: #5c3300;
+  box-shadow: 0 0 26px rgba(255, 191, 46, 0.75);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mgtv-win-star.is-lit {
+    animation: mgtv-star-celebrate 0.8s ease-in-out infinite;
+  }
+}
+
+/* Footer / Win Banner */
+.mgtv-win-banner {
+  padding: 0.85rem 1.5rem;
+  border-radius: 22px;
+  background: linear-gradient(90deg, #2ecc71 0%, #19944c 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 2.5cqi, 2rem);
+  font-weight: 700;
+  text-align: center;
+  text-wrap: balance;
+  border: 4px solid #ffffff;
+  box-shadow: 0 10px 24px rgba(25, 148, 76, 0.35);
+}
+
+.mgtv-cheer-footer {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2cqi, 1.55rem);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+@container mgtv (inline-size < 780px) {
+  .mgtv-main {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .mgtv-player-col {
+    flex-direction: column;
+  }
+}
+
+@keyframes mgtv-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes mgtv-score-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mgtv-star-celebrate {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.12) rotate(6deg);
+  }
+}

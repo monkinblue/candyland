@@ -1,0 +1,30 @@
+# Environment & Secrets (NEVER commit!)
+.env
+.env.*
+
+# Dependencies & Build outputs
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Firebase local cache & debug logs
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+
+# Temporary asset generation scratch files & raw personal source photos
+scripts/tmp/
+assets/
+board/
+
+# Logs & OS files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+*.tsbuildinfo

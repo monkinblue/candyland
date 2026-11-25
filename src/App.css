@@ -1,0 +1,542 @@
+/* ==========================================================================
+   Candyland App Shell & Single-Screen / Mirror Mode Layout
+   Zero scrollbars on 16:9 TV & Pixel Tablet viewports
+   ========================================================================== */
+
+.app-shell {
+  min-height: 100dvh;
+  width: 100%;
+  position: relative;
+}
+
+/* ==========================================================================
+   Mirror Mode (Full Board + Compact Tactile Kid Controller Dock)
+   ========================================================================== */
+
+.mirror-shell {
+  height: 100dvh;
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(0.4rem, 0.9dvh, 0.85rem);
+  padding: clamp(0.45rem, 1dvh, 0.9rem) clamp(0.65rem, 1.4dvw, 1.25rem);
+  background:
+    radial-gradient(circle at 15% 15%, rgba(255, 168, 212, 0.42) 0%, transparent 45%),
+    radial-gradient(circle at 85% 20%, rgba(128, 218, 255, 0.45) 0%, transparent 45%),
+    linear-gradient(170deg, #fff4fa 0%, #fff8eb 52%, #e8f7ff 100%);
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+/* Top HUD */
+.mirror-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  border: 3px solid rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow-soft);
+  min-height: 54px;
+}
+
+.mirror-topbar-left,
+.mirror-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.mirror-icon-btn {
+  min-block-size: 40px;
+  min-inline-size: 40px;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  background: #f8effb;
+  color: var(--text-primary);
+  border: 2px solid rgba(155, 81, 224, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.mirror-icon-btn:hover {
+  background: #ffd43b;
+  transform: translateY(-1px);
+}
+
+.mirror-icon-btn:focus-visible {
+  outline: 4px solid #ffbf2e;
+  outline-offset: 3px;
+}
+
+.mirror-icon-btn.is-muted {
+  background: #ffe3eb;
+  color: #b51f5f;
+}
+
+.mirror-banner-live {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(0.95rem, 0.8rem + 0.65vw, 1.35rem);
+  color: #5b1d8c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 0.5rem;
+}
+
+/* Turn strip in topbar */
+.mirror-turn-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@container (max-width: 900px) {
+  .mirror-turn-strip {
+    display: none;
+  }
+}
+
+.mirror-mini-token {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2.5px solid #ffffff;
+  background: var(--player-color, #ff5e99);
+  box-shadow: 0 0 0 2px var(--player-color, #ff5e99);
+  overflow: hidden;
+  opacity: 0.6;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.mirror-mini-token.is-current {
+  opacity: 1;
+  transform: scale(1.18);
+  box-shadow: 0 0 0 3px #ffd43b, 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.mirror-mini-token img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Center Board Area */
+.mirror-board-area {
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.mirror-board-area .board-stage {
+  max-height: 100%;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+}
+
+/* Floating Animated Card Reveal Popup */
+.mirror-card-reveal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(35, 16, 56, 0.42) 0%, rgba(35, 16, 56, 0.14) 100%);
+  border-radius: var(--radius-md);
+}
+
+.mirror-drawn-card {
+  width: clamp(230px, 26vw, 350px);
+  padding: 1.35rem 1.25rem;
+  border-radius: var(--radius-xl);
+  background: #ffffff;
+  border: 6px solid #ffd43b;
+  box-shadow:
+    0 24px 60px rgba(35, 16, 56, 0.45),
+    0 0 0 5px #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.8rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mirror-drawn-card {
+    animation: cardPopReveal 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+@keyframes cardPopReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.55) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.drawn-card-swatches {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.drawn-card-swatch {
+  width: clamp(72px, 7.5vw, 104px);
+  height: clamp(72px, 7.5vw, 104px);
+  border-radius: var(--radius-md);
+  border: 4px solid #ffffff;
+  box-shadow:
+    0 8px 18px rgba(59, 28, 50, 0.25),
+    inset 0 6px 14px rgba(255, 255, 255, 0.35);
+}
+
+.drawn-card-emoji-badge {
+  width: clamp(92px, 9vw, 126px);
+  height: clamp(92px, 9vw, 126px);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff3b0, #ff99c8);
+  border: 5px solid #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: clamp(2.8rem, 4vw, 4.2rem);
+  box-shadow: 0 10px 24px rgba(59, 28, 50, 0.22);
+}
+
+.drawn-card-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.4rem, 1.1rem + 1vw, 2rem);
+  color: var(--text-primary);
+}
+
+.drawn-card-subtitle {
+  margin: 0;
+  font-size: clamp(0.92rem, 0.82rem + 0.35vw, 1.12rem);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* Bottom Tactile Controller Dock */
+.mirror-control-dock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(0.75rem, 1.6vw, 1.5rem);
+  padding: clamp(0.55rem, 1.1dvh, 0.95rem) clamp(0.85rem, 1.8vw, 1.5rem);
+  border-radius: var(--radius-xl);
+  background: rgba(255, 255, 255, 0.95);
+  border: 4px solid var(--active-player-color, #ff5e99);
+  box-shadow: 0 10px 28px rgba(59, 28, 50, 0.16);
+}
+
+.mirror-player-info {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.mirror-player-portrait {
+  width: clamp(54px, 6.8dvh, 76px);
+  height: clamp(54px, 6.8dvh, 76px);
+  border-radius: 50%;
+  border: 4px solid var(--active-player-color, #ff5e99);
+  background: var(--active-player-color, #ff5e99);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px rgba(59, 28, 50, 0.2);
+}
+
+.mirror-player-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mirror-player-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.mirror-turn-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.15rem, 0.95rem + 0.85vw, 1.75rem);
+  color: var(--active-player-color, #ff5e99);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mirror-space-meta {
+  font-size: clamp(0.82rem, 0.75rem + 0.35vw, 1.05rem);
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+/* Giant Kid-Friendly Draw Button */
+.mirror-draw-btn {
+  min-block-size: clamp(58px, 7.6dvh, 80px);
+  min-inline-size: clamp(230px, 32vw, 440px);
+  padding: 0.75rem 1.85rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.2rem, 1rem + 0.95vw, 1.85rem);
+  color: #ffffff;
+  background: linear-gradient(180deg, #ff5e99 0%, #e03177 55%, #b51f5f 100%);
+  border: 4px solid #ffffff;
+  box-shadow:
+    0 8px 0 #8a1446,
+    0 14px 28px rgba(224, 49, 119, 0.36);
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s ease;
+}
+
+.mirror-draw-btn.is-stuck-btn {
+  background: linear-gradient(180deg, #9b51e0 0%, #6b25b5 100%);
+  box-shadow:
+    0 8px 0 #47147d,
+    0 14px 28px rgba(107, 37, 181, 0.36);
+}
+
+.mirror-draw-btn:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.02);
+}
+
+.mirror-draw-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 3px 0 #8a1446;
+}
+
+.mirror-draw-btn:disabled {
+  background: linear-gradient(180deg, #a79eb0 0%, #867c91 100%);
+  box-shadow: 0 5px 0 #635a6d;
+  cursor: wait;
+}
+
+.mirror-draw-btn:focus-visible {
+  outline: 5px solid #ffd43b;
+  outline-offset: 5px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mirror-draw-btn:not(:disabled) {
+    animation: gentleButtonPulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes gentleButtonPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.028);
+  }
+}
+
+/* ==========================================================================
+   Mirror Mode Victory Native <dialog>
+   ========================================================================== */
+
+.victory-dialog {
+  margin: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xl);
+  width: min(92dvw, 680px);
+  background: linear-gradient(160deg, #fff8dc 0%, #ffe8f4 52%, #e6f4ff 100%);
+  color: var(--text-primary);
+  box-shadow:
+    0 24px 70px rgba(35, 16, 56, 0.5),
+    0 0 0 6px #ffd43b;
+  overflow: hidden;
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.3s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+.victory-dialog[open] {
+  display: block;
+}
+
+.victory-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+.victory-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(25, 10, 42, 0);
+  backdrop-filter: blur(6px);
+  transition-property: background-color, display, overlay;
+  transition-duration: 0.3s;
+  transition-behavior: allow-discrete;
+}
+
+.victory-dialog[open] {
+  opacity: 1;
+}
+
+.victory-dialog[open]::backdrop {
+  background-color: rgba(25, 10, 42, 0.72);
+}
+
+@starting-style {
+  .victory-dialog[open] {
+    opacity: 0;
+  }
+  .victory-dialog[open]::backdrop {
+    background-color: rgba(25, 10, 42, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .victory-dialog {
+    transform: scale(0.9);
+  }
+  .victory-dialog[open] {
+    transform: scale(1);
+  }
+  @starting-style {
+    .victory-dialog[open] {
+      transform: scale(0.9);
+    }
+  }
+}
+
+.victory-dialog-body {
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1.15rem;
+}
+
+.victory-crown-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1.25rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #ffbf2e, #ff8a2b);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  box-shadow: 0 6px 16px rgba(255, 138, 43, 0.35);
+}
+
+.victory-portrait {
+  width: clamp(136px, 20dvh, 188px);
+  height: clamp(136px, 20dvh, 188px);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 6px solid #ffd43b;
+  box-shadow:
+    0 0 0 5px #ffffff,
+    0 14px 32px rgba(74, 37, 17, 0.28);
+}
+
+.victory-title {
+  font-size: clamp(1.8rem, 1.3rem + 1.8vw, 2.8rem);
+  color: #5b1d8c;
+}
+
+.victory-subtitle {
+  margin: 0;
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.3rem);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.victory-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.victory-stat-pill {
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid rgba(155, 81, 224, 0.25);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.victory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.victory-btn {
+  min-block-size: 56px;
+  padding: 0.8rem 1.75rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  transition: transform 0.16s ease;
+}
+
+.victory-btn:focus-visible {
+  outline: 4px solid #ffbf2e;
+  outline-offset: 4px;
+}
+
+.victory-btn-primary {
+  background: linear-gradient(180deg, #3ee07f 0%, #19a853 100%);
+  color: #ffffff;
+  border: 3px solid #ffffff;
+  box-shadow: 0 7px 0 #0e6f35;
+}
+
+.victory-btn-secondary {
+  background: #ffffff;
+  color: var(--text-primary);
+  border: 3px solid rgba(155, 81, 224, 0.35);
+  box-shadow: 0 6px 0 rgba(155, 81, 224, 0.2);
+}
+
+.victory-btn:hover {
+  transform: translateY(-2px);
+}
