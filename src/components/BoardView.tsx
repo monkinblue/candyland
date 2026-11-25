@@ -47,17 +47,18 @@ const START_PAD_COORD: BoardCoord = START_COORD;
 
 /**
  * Well-spaced bottom-left start pad slots around START_COORD so 2..8 starting
- * family members remain completely visible with zero face overlap or edge clipping.
+ * family members remain completely visible with zero face overlap, zero edge clipping,
+ * and generous vertical clearance for the active player's floating nametag.
  */
 const START_PARADE_SLOTS: readonly BoardCoord[] = [
-  { x: 0.042, y: 0.944 },
-  { x: 0.088, y: 0.948 },
-  { x: 0.134, y: 0.948 },
-  { x: 0.040, y: 0.864 },
-  { x: 0.180, y: 0.948 },
-  { x: 0.040, y: 0.784 },
-  { x: 0.226, y: 0.948 },
-  { x: 0.272, y: 0.948 },
+  { x: 0.042, y: 0.948 },
+  { x: 0.090, y: 0.948 },
+  { x: 0.138, y: 0.948 },
+  { x: 0.186, y: 0.948 },
+  { x: 0.234, y: 0.948 },
+  { x: 0.282, y: 0.948 },
+  { x: 0.036, y: 0.804 },
+  { x: 0.036, y: 0.674 },
 ] as const;
 
 /**
