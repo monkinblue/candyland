@@ -88,7 +88,7 @@ export function PopLollipopBubbles({
     spawnTimer: 0,
     nextId: 1,
     score: 0,
-    lastReportedScore: -1,
+    lastReportedScore: 0,
     lastReportTime: 0,
     pendingFlushTimer: null as number | null,
   });

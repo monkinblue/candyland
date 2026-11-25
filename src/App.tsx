@@ -152,14 +152,19 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     return () => {
       unsub();
       soundEngine.setCutsceneDucking(false);
+      soundEngine.stopVoice();
       soundEngine.stopBgm();
     };
   }, []);
 
-  // Duck BGM smoothly during full-screen video cutscenes
+  // Duck BGM smoothly and silence lingering narration during full-screen HD video cutscenes
   useEffect(() => {
-    soundEngine.setCutsceneDucking(room.phase === 'cutscene');
-  }, [room.phase]);
+    const isCutscene = room.phase === 'cutscene';
+    soundEngine.setCutsceneDucking(isCutscene);
+    if (isCutscene && room.cutscene?.videoUrl) {
+      soundEngine.stopVoice();
+    }
+  }, [room.phase, room.cutscene?.videoUrl]);
 
   // Trigger ElevenLabs narrator voiceovers & event SFX once per unique state event
   useEffect(() => {
@@ -167,6 +172,8 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
       return;
     }
     lastSpokenEventRef.current = room.lastEventId;
+
+    const isVideoCutscene = room.phase === 'cutscene' && Boolean(room.cutscene?.videoUrl);
 
     if (room.phase === 'card-drawn' && room.currentCard) {
       soundEngine.playCardReveal(
@@ -176,11 +183,11 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
       soundEngine.playStarChime();
     } else if (room.phase === 'victory') {
       soundEngine.playVictoryFanfare();
-    } else if (room.cutscene?.type === 'licorice-stuck') {
+    } else if (room.cutscene?.type === 'licorice-stuck' && !isVideoCutscene) {
       soundEngine.playLicoriceSquish();
     }
 
-    if (room.lastVoiceKey) {
+    if (room.lastVoiceKey && !isVideoCutscene) {
       void soundEngine.playVoiceIfValid(room.lastVoiceKey, { interrupt: true });
     }
   }, [room.lastEventId, room.lastVoiceKey, room.phase, room.currentCard, room.cutscene]);
@@ -267,6 +274,7 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
   }, []);
 
   const handleReturnToLobby = useCallback(() => {
+    soundEngine.stopVoice();
     soundEngine.playButtonTap();
     setRoom((prev) => ({
       ...prev,
@@ -277,6 +285,7 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
       actionCard: null,
       cutscene: null,
       currentCard: null,
+      lastVoiceKey: null,
       updatedAt: Date.now(),
     }));
   }, []);
@@ -565,6 +574,7 @@ export function App() {
   }, [viewMode]);
 
   const handleExitToLanding = useCallback(() => {
+    soundEngine.stopVoice();
     soundEngine.stopBgm();
     setInitialRoomCode(undefined);
     setViewMode('landing');

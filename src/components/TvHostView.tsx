@@ -438,15 +438,21 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     }
   }, [room?.phase, showCharSelect, playMiniGameOnTv]);
 
-  // Duck TV BGM during video cutscenes
+  // Duck TV BGM during video cutscenes & stop lingering narrator voice before MP4 soundtrack plays
   useEffect(() => {
-    soundEngine.setCutsceneDucking(room?.phase === 'cutscene');
-  }, [room?.phase]);
+    const isCutscene = room?.phase === 'cutscene';
+    soundEngine.setCutsceneDucking(isCutscene);
+    if (isCutscene && room.cutscene?.videoUrl) {
+      soundEngine.stopVoice();
+    }
+  }, [room?.phase, room?.cutscene?.videoUrl]);
 
   // Play narrator voiceovers & phase SFX on TV (deduplicated by lastEventId)
   useEffect(() => {
     if (!room) return;
     const eventKey = room.lastEventId;
+    const hasCutsceneVideo =
+      room.phase === 'cutscene' && Boolean(room.cutscene?.videoUrl);
 
     if (eventKey && eventKey !== lastSpokenEventRef.current) {
       lastSpokenEventRef.current = eventKey;
@@ -456,18 +462,22 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
         soundEngine.playCardReveal(room.currentCard.type === 'double');
       } else if (room.phase === 'minigame') {
         soundEngine.playStarChime();
-      } else if (room.phase === 'victory') {
-        soundEngine.playVictoryFanfare();
-      } else if (room.phase === 'cutscene' && room.cutscene?.type === 'licorice-stuck') {
+      } else if (
+        room.phase === 'cutscene' &&
+        room.cutscene?.type === 'licorice-stuck' &&
+        !hasCutsceneVideo
+      ) {
         soundEngine.playLicoriceSquish();
       }
 
-      if (room.lastVoiceKey) {
+      if (hasCutsceneVideo) {
+        soundEngine.stopVoice();
+      } else if (room.lastVoiceKey) {
         void soundEngine.playVoiceIfValid(room.lastVoiceKey, { interrupt: true });
       }
     }
 
-    // Trigger celebratory fanfare when entering victory after a cutscene
+    // Trigger celebratory fanfare strictly ONCE per victory (direct or post-cutscene)
     const phaseKey = `${room.phase}:${room.turnNumber}:${room.winnerId ?? ''}`;
     if (
       room.phase === 'victory' &&

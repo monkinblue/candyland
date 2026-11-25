@@ -96,7 +96,7 @@ export function CatchGumdrops({
     nextId: 1,
     spawnTimer: 0,
     score: 0,
-    lastReportedScore: -1,
+    lastReportedScore: 0,
     lastReportTime: 0,
     pendingFlushTimer: null as number | null,
   });

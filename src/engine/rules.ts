@@ -462,6 +462,7 @@ export function applyDrawCard(
     );
     const nextIndex = (state.currentPlayerIndex + 1) % updatedPlayers.length;
     const nextPlayer = updatedPlayers[nextIndex];
+    const nextIsStuck = nextPlayer.stuckTurns > 0;
     return {
       ...state,
       updatedAt: Date.now(),
@@ -473,7 +474,7 @@ export function applyDrawCard(
       movement: null,
       lastEventBanner: `${currentPlayer.name} wiggled free from Licorice Lagoon! Now it's ${nextPlayer.name}'s turn!`,
       lastEventId: nextId('licorice-free'),
-      lastVoiceKey: 'event_licorice_skip',
+      lastVoiceKey: nextIsStuck ? 'event_licorice_skip' : `turn_${nextPlayer.id}`,
     };
   }
 
@@ -651,6 +652,7 @@ export function applyResolveDrawnCard(
       usedActionCardIds: nextUsedIds,
       lastEventBanner: `${player.name}'s Action Card: ${item.title}!`,
       lastEventId: nextId('action-start'),
+      lastVoiceKey: null,
     };
   }
 
@@ -668,20 +670,21 @@ export function applyResolveDrawnCard(
       idx === state.currentPlayerIndex ? { ...p, stuckTurns: 1 } : p
     );
     if (state.settings.enableCutscenes) {
+      const cutscene = createCutsceneSession(
+        'licorice-stuck',
+        player,
+        'waiting-draw',
+        context
+      );
       return {
         ...state,
         updatedAt: Date.now(),
         players: updatedPlayers,
         phase: 'cutscene',
-        cutscene: createCutsceneSession(
-          'licorice-stuck',
-          player,
-          'waiting-draw',
-          context
-        ),
+        cutscene,
         lastEventBanner: computed.banner,
         lastEventId: nextId('licorice-trap'),
-        lastVoiceKey: 'event_licorice_stuck',
+        lastVoiceKey: cutscene.videoUrl ? null : 'event_licorice_stuck',
       };
     }
     return advanceToNextTurn(
@@ -709,6 +712,7 @@ export function applyResolveDrawnCard(
     movement,
     lastEventBanner: computed.banner,
     lastEventId: nextId('move-start'),
+    lastVoiceKey: null,
   };
 }
 
@@ -739,6 +743,7 @@ export function applyMoveComplete(
     updatedAt: Date.now(),
     players: updatedPlayers,
     movement: null,
+    lastVoiceKey: null,
   };
 
   // 1. Victory at Candy Castle!
@@ -753,15 +758,17 @@ export function applyMoveComplete(
     };
 
     if (state.settings.enableCutscenes) {
+      const cutscene = createCutsceneSession(
+        'victory-castle',
+        player,
+        'victory',
+        context
+      );
       return {
         ...victoryState,
         phase: 'cutscene',
-        cutscene: createCutsceneSession(
-          'victory-castle',
-          player,
-          'victory',
-          context
-        ),
+        cutscene,
+        lastVoiceKey: cutscene.videoUrl ? null : `victory_${player.id}`,
       };
     }
 
@@ -787,14 +794,20 @@ export function applyMoveComplete(
         : 'waiting-draw';
 
     if (state.settings.enableCutscenes) {
+      const cutscene = createCutsceneSession(
+        cutsceneType,
+        player,
+        nextPhase,
+        context
+      );
       return {
         ...baseState,
         phase: 'cutscene',
         celebration: makeCelebration('shortcut'),
-        cutscene: createCutsceneSession(cutsceneType, player, nextPhase, context),
+        cutscene,
         lastEventBanner: `${player.name} zoomed through the shortcut!`,
         lastEventId: nextId('shortcut'),
-        lastVoiceKey: voiceKey,
+        lastVoiceKey: cutscene.videoUrl ? null : voiceKey,
       };
     }
 
@@ -836,15 +849,17 @@ export function applyMoveComplete(
     };
 
     if (state.settings.enableCutscenes) {
+      const cutscene = createCutsceneSession(
+        'licorice-stuck',
+        player,
+        'waiting-draw',
+        context
+      );
       return {
         ...stuckState,
         phase: 'cutscene',
-        cutscene: createCutsceneSession(
-          'licorice-stuck',
-          player,
-          'waiting-draw',
-          context
-        ),
+        cutscene,
+        lastVoiceKey: cutscene.videoUrl ? null : 'event_licorice_stuck',
       };
     }
 
@@ -877,6 +892,7 @@ export function applyMoveComplete(
       celebration: makeCelebration('card-reveal'),
       lastEventBanner: `${player.name} arrived at ${LANDMARK_META[landedTile.landmark!].regionName}!`,
       lastEventId: nextId('landmark-cutscene'),
+      lastVoiceKey: null,
     };
   }
 
@@ -912,12 +928,15 @@ export function applyCutsceneComplete(state: GameRoomState): GameRoomState {
   const player = state.players[state.currentPlayerIndex];
 
   if (cutscene.nextPhase === 'victory') {
+    const winnerId = state.winnerId ?? player?.id ?? null;
     return {
       ...state,
       updatedAt: Date.now(),
       phase: 'victory',
       cutscene: null,
       celebration: makeCelebration('victory'),
+      lastEventId: nextId('victory-reveal'),
+      lastVoiceKey: winnerId ? `victory_${winnerId}` : 'victory_generic',
     };
   }
 

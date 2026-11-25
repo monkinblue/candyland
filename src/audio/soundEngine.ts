@@ -119,6 +119,7 @@ const HOP_PENTATONIC = [
 const BGM_NORMAL_GAIN = 0.2;
 const BGM_DUCKED_GAIN = 0.04;
 const EIGHTH_NOTE_SEC = 60 / 114 / 2; // ~0.263s per 8th note
+const SAME_KEY_DEDUPE_MS = 1400;
 
 class CandylandSoundEngine {
   private ctx: AudioContext | null = null;
@@ -148,6 +149,10 @@ class CandylandSoundEngine {
   private voiceLoading = new Map<VoiceKey, Promise<AudioBuffer | null>>();
   private voiceQueue: QueuedVoiceItem[] = [];
   private processingVoiceQueue = false;
+  private voiceGeneration = 0;
+  private activeVoiceKey: VoiceKey | null = null;
+  private lastPlayedVoiceKey: VoiceKey | null = null;
+  private lastPlayedVoiceAt = 0;
   private activeVoiceSource: AudioBufferSourceNode | null = null;
   private activeHtmlAudio: HTMLAudioElement | null = null;
   private activeVoiceCancel: (() => void) | null = null;
@@ -416,6 +421,9 @@ class CandylandSoundEngine {
   }
 
   public setCutsceneDucking(active: boolean): void {
+    if (active) {
+      this.stopVoice();
+    }
     if (this.cutsceneDucking === active) return;
     this.cutsceneDucking = active;
     this.updateGainTargets(false);
@@ -651,49 +659,60 @@ class CandylandSoundEngine {
       return Promise.resolve();
     }
 
+    const now = Date.now();
+    const isDuplicateActive = this.activeVoiceKey === key;
+    const isDuplicateQueued = this.voiceQueue.some((item) => item.key === key);
+    const isDuplicateRecent =
+      this.lastPlayedVoiceKey === key && now - this.lastPlayedVoiceAt < SAME_KEY_DEDUPE_MS;
+
+    if (isDuplicateActive || isDuplicateQueued || isDuplicateRecent) {
+      return Promise.resolve();
+    }
+
     if (options?.interrupt) {
       this.stopVoice();
     }
 
+    this.lastPlayedVoiceKey = key;
+    this.lastPlayedVoiceAt = now;
+
     return new Promise<void>((resolve) => {
       this.voiceQueue.push({ key, resolve });
       if (!this.processingVoiceQueue) {
-        void this.drainVoiceQueue();
+        const runGen = this.voiceGeneration;
+        void this.drainVoiceQueue(runGen);
       }
     });
   }
 
-  public stopVoice(): void {
-    // Resolve any pending queued items cleanly
-    while (this.voiceQueue.length > 0) {
-      const item = this.voiceQueue.shift();
-      item?.resolve();
-    }
-
-    if (this.activeVoiceCancel) {
-      const cancel = this.activeVoiceCancel;
-      this.activeVoiceCancel = null;
-      cancel();
-    }
-
-    if (this.activeVoiceSource) {
+  private stopActivePlaybackOnly(): void {
+    const src = this.activeVoiceSource;
+    this.activeVoiceSource = null;
+    if (src) {
       try {
-        this.activeVoiceSource.stop();
+        src.onended = null;
+        src.stop();
       } catch {
         // Already stopped
       }
-      this.activeVoiceSource.disconnect();
-      this.activeVoiceSource = null;
+      try {
+        src.disconnect();
+      } catch {
+        // Already disconnected
+      }
     }
 
-    if (this.activeHtmlAudio) {
+    const htmlAudio = this.activeHtmlAudio;
+    this.activeHtmlAudio = null;
+    if (htmlAudio) {
       try {
-        this.activeHtmlAudio.pause();
-        this.activeHtmlAudio.currentTime = 0;
+        htmlAudio.onended = null;
+        htmlAudio.onerror = null;
+        htmlAudio.pause();
+        htmlAudio.currentTime = 0;
       } catch {
         // Ignore
       }
-      this.activeHtmlAudio = null;
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -704,6 +723,28 @@ class CandylandSoundEngine {
       }
     }
 
+    if (this.activeVoiceCancel) {
+      const cancel = this.activeVoiceCancel;
+      this.activeVoiceCancel = null;
+      cancel();
+    }
+  }
+
+  public stopVoice(): void {
+    this.voiceGeneration += 1;
+    this.processingVoiceQueue = false;
+    this.activeVoiceKey = null;
+    this.lastPlayedVoiceKey = null;
+    this.lastPlayedVoiceAt = 0;
+
+    // Resolve any pending queued items cleanly
+    while (this.voiceQueue.length > 0) {
+      const item = this.voiceQueue.shift();
+      item?.resolve();
+    }
+
+    this.stopActivePlaybackOnly();
+
     if (this.speaking) {
       this.speaking = false;
       this.updateGainTargets(false);
@@ -711,40 +752,54 @@ class CandylandSoundEngine {
     }
   }
 
-  private async drainVoiceQueue(): Promise<void> {
-    if (this.processingVoiceQueue) return;
+  private async drainVoiceQueue(runGen: number): Promise<void> {
+    if (this.processingVoiceQueue || runGen !== this.voiceGeneration) return;
     this.processingVoiceQueue = true;
 
     try {
-      while (this.voiceQueue.length > 0) {
+      while (runGen === this.voiceGeneration && this.voiceQueue.length > 0) {
         const next = this.voiceQueue.shift();
         if (!next) continue;
 
-        if (this.muted || !this.allowsBgmAndVoice()) {
+        if (runGen !== this.voiceGeneration || this.muted || !this.allowsBgmAndVoice()) {
           next.resolve();
           continue;
         }
 
-        this.speaking = true;
-        this.updateGainTargets(false);
-        this.emitState();
+        this.activeVoiceKey = next.key;
+        if (!this.speaking) {
+          this.speaking = true;
+          this.updateGainTargets(false);
+          this.emitState();
+        }
 
-        await this.playSingleVoiceClip(next.key);
+        await this.playSingleVoiceClip(next.key, runGen);
+
+        if (runGen === this.voiceGeneration && this.activeVoiceKey === next.key) {
+          this.activeVoiceKey = null;
+        }
         next.resolve();
       }
     } finally {
-      this.processingVoiceQueue = false;
-      if (this.speaking) {
-        this.speaking = false;
-        this.updateGainTargets(false);
-        this.emitState();
+      if (runGen === this.voiceGeneration) {
+        this.processingVoiceQueue = false;
+        this.activeVoiceKey = null;
+        if (this.speaking) {
+          this.speaking = false;
+          this.updateGainTargets(false);
+          this.emitState();
+        }
       }
     }
   }
 
-  private async playSingleVoiceClip(key: VoiceKey): Promise<void> {
+  private isVoiceStale(gen: number): boolean {
+    return gen !== this.voiceGeneration || this.muted || !this.allowsBgmAndVoice();
+  }
+
+  private async playSingleVoiceClip(key: VoiceKey, gen: number): Promise<void> {
     const meta = VOICE_MANIFEST[key];
-    if (!meta) return;
+    if (!meta || this.isVoiceStale(gen)) return;
 
     const ctx = this.ensureContext();
     let mp3Missing = false;
@@ -753,11 +808,18 @@ class CandylandSoundEngine {
     if (ctx && this.voiceGain) {
       if (ctx.state === 'suspended') {
         await this.unlock();
+        if (this.isVoiceStale(gen)) return;
       }
       const buffer = await this.loadVoiceBuffer(key);
+      if (this.isVoiceStale(gen)) return;
+
       if (!buffer) {
         mp3Missing = true;
       } else if (ctx.state === 'running') {
+        // Defensively stop any lingering audio node before starting so clips can never overlap
+        this.stopActivePlaybackOnly();
+        if (this.isVoiceStale(gen)) return;
+
         await new Promise<void>((resolve) => {
           let settled = false;
           const finish = () => {
@@ -789,8 +851,13 @@ class CandylandSoundEngine {
       }
     }
 
+    if (this.isVoiceStale(gen)) return;
+
     // Fallback 1: HTMLAudioElement (only if MP3 wasn't known missing)
     if (!mp3Missing) {
+      this.stopActivePlaybackOnly();
+      if (this.isVoiceStale(gen)) return;
+
       const htmlResult = await new Promise<'played' | 'blocked' | 'error'>((resolve) => {
         if (typeof Audio === 'undefined') {
           resolve('error');
@@ -827,11 +894,16 @@ class CandylandSoundEngine {
         });
       });
 
-      if (htmlResult === 'played' || htmlResult === 'blocked') return;
+      if (this.isVoiceStale(gen) || htmlResult === 'played' || htmlResult === 'blocked') return;
     }
+
+    if (this.isVoiceStale(gen)) return;
 
     // Fallback 2: Browser Web Speech API ONLY when unlocked and MP3 asset is missing
     if (this.unlocked && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      this.stopActivePlaybackOnly();
+      if (this.isVoiceStale(gen)) return;
+
       await new Promise<void>((resolve) => {
         let settled = false;
         const timeoutId = window.setTimeout(() => finish(), 7000);

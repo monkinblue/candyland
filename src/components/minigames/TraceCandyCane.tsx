@@ -143,7 +143,7 @@ export function TraceCandyCane({
     trail: [] as TrailPoint[],
     sparkles: [] as Sparkle[],
     score: 0,
-    lastReportedScore: -1,
+    lastReportedScore: 0,
     lastReportTime: 0,
     pendingFlushTimer: null as number | null,
     respawnTimer: null as number | null,

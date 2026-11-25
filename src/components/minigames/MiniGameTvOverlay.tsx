@@ -107,7 +107,7 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
           <span className="mgtv-ribbon-star" aria-hidden="true">
             ⭐
           </span>
-          <span>STAR MINI-GAME LIVE!</span>
+          <span>{session.status === 'ready' ? 'STAR MINI-GAME!' : 'STAR MINI-GAME LIVE!'}</span>
           <span className="mgtv-ribbon-star" aria-hidden="true">
             ⭐
           </span>
@@ -168,7 +168,7 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
             </svg>
             <div className="mgtv-ring-center">
               {session.status === 'ready' ? (
-                <span className="mgtv-ring-ready">GET READY!</span>
+                <span className="mgtv-ring-ready">READY?</span>
               ) : (
                 <>
                   <span className="mgtv-ring-sec">{displaySec}</span>
@@ -214,7 +214,7 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
         ) : (
           <p className="mgtv-cheer-footer">
             {session.status === 'ready'
-              ? `Look at the tablet, ${session.playerName} — get your fingers ready!`
+              ? `Pass the tablet to ${session.playerName} and tap "I'M READY!" to start!`
               : `Cheer for ${session.playerName}! Reach ${targetScore} stars for +${session.bonusSpacesOnWin} bonus spaces!`}
           </p>
         )}

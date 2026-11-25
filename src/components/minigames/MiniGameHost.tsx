@@ -18,7 +18,7 @@ export interface MiniGameHostProps {
   modal?: boolean;
 }
 
-type HostPhase = 'ready' | 'go' | 'playing' | 'result';
+type HostPhase = 'confirm' | 'ready' | 'go' | 'playing' | 'result';
 
 interface MiniGameMeta {
   emoji: string;
@@ -72,20 +72,31 @@ export function MiniGameHost({
   const durationMs = Math.max(3, session.durationSeconds || 10) * 1000;
   const targetScore = Math.max(1, session.targetScore || (session.isKid ? 6 : 10));
 
-  const [hostPhase, setHostPhase] = useState<HostPhase>('ready');
-  const [countdownLabel, setCountdownLabel] = useState<'READY?' | 'SET...' | 'GO!'>('READY?');
+  const [hostPhase, setHostPhase] = useState<HostPhase>('confirm');
+  const [countdownLabel, setCountdownLabel] = useState<'SET...' | 'GO!'>('SET...');
   const [timeLeftMs, setTimeLeftMs] = useState<number>(durationMs);
   const [score, setScore] = useState<number>(0);
   const [portraitFailed, setPortraitFailed] = useState<boolean>(false);
 
   const scoreRef = useRef(0);
   const completedRef = useRef(false);
+  const startTriggeredRef = useRef(false);
+  const hostPhaseRef = useRef<HostPhase>('confirm');
+  const countdownTimersRef = useRef<number[]>([]);
   const lastSyncRef = useRef(0);
   const onScoreChangeRef = useRef(onScoreChange);
   const onCompleteRef = useRef(onComplete);
 
+  hostPhaseRef.current = hostPhase;
   onScoreChangeRef.current = onScoreChange;
   onCompleteRef.current = onComplete;
+
+  const clearCountdownTimers = useCallback(() => {
+    for (const id of countdownTimersRef.current) {
+      window.clearTimeout(id);
+    }
+    countdownTimersRef.current = [];
+  }, []);
 
   // Open native modal <dialog> cleanly (per modern-web-guidance `dialog` guide)
   useEffect(() => {
@@ -114,43 +125,52 @@ export function MiniGameHost({
     };
   }, [modal, session.id]);
 
-  // Reset per new mini-game session
+  // Reset per new mini-game session and stay patiently in 'confirm' until user taps Ready!
   useEffect(() => {
+    clearCountdownTimers();
     scoreRef.current = 0;
     completedRef.current = false;
+    startTriggeredRef.current = false;
+    hostPhaseRef.current = 'confirm';
     lastSyncRef.current = 0;
     setScore(0);
     setTimeLeftMs(durationMs);
-    setHostPhase('ready');
-    setCountdownLabel('READY?');
+    setHostPhase('confirm');
+    setCountdownLabel('SET...');
     setPortraitFailed(false);
 
-    soundEngine.playButtonTap();
+    return () => {
+      clearCountdownTimers();
+    };
+  }, [session.id, durationMs, clearCountdownTimers]);
 
-    // 2-second visual "Ready... Set... GO!" intro
-    const tSet = window.setTimeout(() => {
-      setCountdownLabel('SET...');
-      soundEngine.playButtonTap();
-    }, 850);
+  // Triggered only after the player/parent explicitly taps "I'M READY! START! ▶"
+  const handleConfirmReady = useCallback(() => {
+    if (startTriggeredRef.current) return;
+    startTriggeredRef.current = true;
+
+    clearCountdownTimers();
+    soundEngine.playButtonTap();
+    hostPhaseRef.current = 'ready';
+    setCountdownLabel('SET...');
+    setHostPhase('ready');
 
     const tGo = window.setTimeout(() => {
+      hostPhaseRef.current = 'go';
       setCountdownLabel('GO!');
       setHostPhase('go');
       soundEngine.playStarChime();
-    }, 1550);
+    }, 450);
 
     const tPlay = window.setTimeout(() => {
+      hostPhaseRef.current = 'playing';
       setHostPhase('playing');
-      // Immediately flip remote TV session status to 'playing'
+      // Immediately flip remote TV session status to 'playing' so both 10s timers start together
       onScoreChangeRef.current(0, 0);
-    }, 2000);
+    }, 950);
 
-    return () => {
-      window.clearTimeout(tSet);
-      window.clearTimeout(tGo);
-      window.clearTimeout(tPlay);
-    };
-  }, [session.id, durationMs]);
+    countdownTimersRef.current = [tGo, tPlay];
+  }, [clearCountdownTimers]);
 
   // Authoritative 10-second play countdown
   useEffect(() => {
@@ -216,6 +236,15 @@ export function MiniGameHost({
 
   const handleGameScoreChange = useCallback(
     (nextScore: number, progress: number) => {
+      // Never forward score/status updates before active gameplay starts (confirm / ready / go)
+      if (
+        hostPhaseRef.current === 'confirm' ||
+        hostPhaseRef.current === 'ready' ||
+        hostPhaseRef.current === 'go'
+      ) {
+        return;
+      }
+
       scoreRef.current = nextScore;
       setScore(nextScore);
 
@@ -383,8 +412,8 @@ export function MiniGameHost({
           />
         )}
 
-        {/* 2-Second Visual "Ready... GO!" Overlay */}
-        {(hostPhase === 'ready' || hostPhase === 'go') && (
+        {/* Patient Pass-the-Tablet Ready Gate + Snappy "SET... GO!" Countdown */}
+        {(hostPhase === 'confirm' || hostPhase === 'ready' || hostPhase === 'go') && (
           <div className="mg-intro-overlay" role="status" aria-live="assertive">
             <div className="mg-intro-card">
               <div className="mg-intro-hero">
@@ -404,14 +433,36 @@ export function MiniGameHost({
                   {meta.emoji}
                 </span>
               </div>
-              <p className="mg-intro-player">{session.playerName}&apos;s Turn!</p>
+              <p className="mg-intro-player">
+                {hostPhase === 'confirm'
+                  ? `Pass the tablet to ${session.playerName}!`
+                  : `${session.playerName}'s Turn!`}
+              </p>
               <h2 className="mg-intro-title">{session.title || meta.headline}</h2>
               <p className="mg-intro-instructions">
                 {session.isKid ? meta.kidInstruction : meta.adultInstruction}
               </p>
-              <div className={`mg-countdown-badge ${hostPhase === 'go' ? 'is-go' : ''}`}>
-                {countdownLabel}
-              </div>
+
+              {hostPhase === 'confirm' ? (
+                <>
+                  <div className="mg-intro-goal-pill">
+                    Goal: <strong>{targetScore} ⭐</strong> in {session.durationSeconds || 10}s for{' '}
+                    <strong>+{session.bonusSpacesOnWin} Bonus Spaces!</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="mg-ready-start-btn"
+                    onClick={handleConfirmReady}
+                    autoFocus
+                  >
+                    I&apos;M READY! START! ▶
+                  </button>
+                </>
+              ) : (
+                <div className={`mg-countdown-badge ${hostPhase === 'go' ? 'is-go' : ''}`}>
+                  {countdownLabel}
+                </div>
+              )}
             </div>
           </div>
         )}
