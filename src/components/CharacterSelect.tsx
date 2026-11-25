@@ -18,6 +18,7 @@ import {
 import { createPlayersFromCharacters } from '../engine/rules';
 import { soundEngine } from '../audio/soundEngine';
 import { CHARACTERS } from '../data/characters';
+import { useToddlerTap } from '../utils/toddlerTap';
 import './CharacterSelect.css';
 
 export interface CharacterSelectProps {
@@ -162,6 +163,8 @@ export const CharacterSelect: React.FC<CharacterSelectProps> = ({
     onStartGame();
   };
 
+  const startTapProps = useToddlerTap(handleStartClick, !canStart);
+
   return (
     <main className={`char-select-page char-select-mode-${mode}`}>
       <div className="char-select-container">
@@ -297,7 +300,11 @@ export const CharacterSelect: React.FC<CharacterSelectProps> = ({
                   <ShieldCheck size={18} aria-hidden="true" />
                   <span>
                     Kid-Friendly Landmarks:{' '}
-                    <strong>{settings.kidFriendlyLandmarks ? 'ON' : 'Classic'}</strong>
+                    <strong>
+                      {settings.kidFriendlyLandmarks
+                        ? 'ON (No Backwards)'
+                        : 'OFF (Classic Backwards)'}
+                    </strong>
                   </span>
                 </button>
               )}
@@ -370,7 +377,7 @@ export const CharacterSelect: React.FC<CharacterSelectProps> = ({
               type="button"
               className="char-start-btn"
               disabled={!canStart}
-              onClick={handleStartClick}
+              {...startTapProps}
             >
               <Play size={30} fill="currentColor" aria-hidden="true" />
               <span>Start Adventure!</span>

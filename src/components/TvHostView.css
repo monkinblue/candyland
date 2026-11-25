@@ -764,6 +764,9 @@
   font-weight: 700;
   border: 3px solid #ffffff;
   box-shadow: 0 6px 18px rgba(224, 49, 119, 0.35);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tv-room-chip {

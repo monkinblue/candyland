@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  FastForward,
   LogOut,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Sparkles,
   Trophy,
@@ -33,6 +34,8 @@ import { CharacterSelect } from './CharacterSelect';
 import { CelebrationEffects } from './CelebrationEffects';
 import { ActionCardOverlay } from './ActionCardOverlay';
 import { MiniGameHost } from './minigames/MiniGameHost';
+import { useFullscreen } from '../utils/fullscreen';
+import { useToddlerTap } from '../utils/toddlerTap';
 import './TabletControllerView.css';
 
 export interface TabletControllerViewProps {
@@ -387,6 +390,32 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
     }
   };
 
+  const {
+    isSupported: fullscreenSupported,
+    isFullscreen,
+    toggleFullscreen,
+  } = useFullscreen();
+
+  const handleToggleFullscreen = useCallback(() => {
+    soundEngine.playButtonTap();
+    toggleFullscreen();
+  }, [toggleFullscreen]);
+
+  const megaDrawTapProps = useToddlerTap(
+    () => {
+      void handleDrawCardTap();
+    },
+    drawingInFlight || room?.phase !== 'waiting-draw'
+  );
+
+  const playAgainTapProps = useToddlerTap(
+    () => {
+      soundEngine.playStarChime();
+      void actions.playAgain();
+    },
+    room?.phase !== 'victory'
+  );
+
   const enteredCode = codeBoxes.join('');
 
   // =========================================================================
@@ -408,21 +437,41 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
             <span>Home</span>
           </button>
 
-          <button
-            type="button"
-            className="tab-icon-btn"
-            aria-label={
-              audioState.muted ? 'Unmute touch sound effects' : 'Mute touch sound effects'
-            }
-            aria-pressed={audioState.muted}
-            onClick={() => soundEngine.toggleMute()}
-          >
-            {audioState.muted ? (
-              <VolumeX size={24} aria-hidden="true" />
-            ) : (
-              <Volume2 size={24} aria-hidden="true" />
+          <div className="tab-topbar-right">
+            {fullscreenSupported && (
+              <button
+                type="button"
+                className="tab-icon-btn"
+                aria-label={
+                  isFullscreen ? 'Exit full screen' : 'Enter full screen'
+                }
+                aria-pressed={isFullscreen}
+                onClick={handleToggleFullscreen}
+              >
+                {isFullscreen ? (
+                  <Minimize2 size={22} aria-hidden="true" />
+                ) : (
+                  <Maximize2 size={22} aria-hidden="true" />
+                )}
+              </button>
             )}
-          </button>
+
+            <button
+              type="button"
+              className="tab-icon-btn"
+              aria-label={
+                audioState.muted ? 'Unmute touch sound effects' : 'Mute touch sound effects'
+              }
+              aria-pressed={audioState.muted}
+              onClick={() => soundEngine.toggleMute()}
+            >
+              {audioState.muted ? (
+                <VolumeX size={24} aria-hidden="true" />
+              ) : (
+                <Volume2 size={24} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </header>
 
         <section className="tablet-join-card" aria-labelledby={codeLabelId}>
@@ -654,6 +703,24 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
         </div>
 
         <div className="tab-topbar-right">
+          {fullscreenSupported && (
+            <button
+              type="button"
+              className="tab-icon-btn"
+              aria-label={
+                isFullscreen ? 'Exit full screen' : 'Enter full screen'
+              }
+              aria-pressed={isFullscreen}
+              onClick={handleToggleFullscreen}
+            >
+              {isFullscreen ? (
+                <Minimize2 size={22} aria-hidden="true" />
+              ) : (
+                <Maximize2 size={22} aria-hidden="true" />
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             className="tab-icon-btn"
@@ -725,10 +792,7 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
               <button
                 type="button"
                 className="tab-big-playagain-btn"
-                onClick={() => {
-                  soundEngine.playStarChime();
-                  void actions.playAgain();
-                }}
+                {...playAgainTapProps}
               >
                 <RotateCcw size={32} aria-hidden="true" />
                 <span>Play Again!</span>
@@ -801,7 +865,7 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
                       isStuck ? 'is-licorice' : ''
                     }`}
                     disabled={drawingInFlight}
-                    onClick={() => void handleDrawCardTap()}
+                    {...megaDrawTapProps}
                   >
                     <span className="tab-mega-sparkle-1" aria-hidden="true">
                       ✨
@@ -870,23 +934,14 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
                     aria-live="polite"
                   >
                     <span className="tab-cutscene-emoji" aria-hidden="true">
-                      🎬
+                      ✨🎬✨
                     </span>
+                    <div className="tab-cutscene-watch-pill">
+                      <Tv size={26} aria-hidden="true" />
+                      <span>Look at the TV! ✨</span>
+                    </div>
                     <h2 className="tab-drawn-title">{room.cutscene.title}</h2>
-                    <p className="tab-cutscene-sub">
-                      Look up at the TV! {room.cutscene.subtitle}
-                    </p>
-                    <button
-                      type="button"
-                      className="tab-secondary-action-btn"
-                      onClick={() => {
-                        soundEngine.playButtonTap();
-                        void actions.finishCutscene();
-                      }}
-                    >
-                      <FastForward size={22} aria-hidden="true" />
-                      <span>Skip Video on TV</span>
-                    </button>
+                    <p className="tab-cutscene-sub">{room.cutscene.subtitle}</p>
                   </div>
                 )}
               </div>

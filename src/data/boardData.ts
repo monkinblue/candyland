@@ -19,6 +19,10 @@ export const START_COORD: BoardCoord = { x: 0.042, y: 0.925 };
  * 7) Ice Palace (49-55)
  * 8) Chocolate Mountain (56-68)
  * 9) Candy Castle (69-71)          + Rainbow finish tile at tile 71
+ *
+ * All 7 Pink Candy Landmark tiles (#5, #11, #17, #35, #44, #51, #65) use `color: 'pink'`
+ * so regular color cards skip them and dedicated Landmark cards land on them (forward or backward!).
+ * Both dark X Licorice Trap tiles (#39, #42) use `color: 'licorice'`.
  */
 export const BOARD_TILES: readonly BoardTile[] = [
   // 1..7: Cupcake Commons
@@ -35,7 +39,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 4, color: 'blue', x: 0.225, y: 0.805, region: 'Cupcake Commons' },
   {
     index: 5,
-    color: 'orange',
+    color: 'pink',
     x: 0.275,
     y: 0.820,
     region: 'Cupcake Commons',
@@ -57,7 +61,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 10, color: 'blue', x: 0.515, y: 0.835, region: 'Ice Cream Slopes' },
   {
     index: 11,
-    color: 'orange',
+    color: 'pink',
     x: 0.565,
     y: 0.820,
     region: 'Ice Cream Slopes',
@@ -72,7 +76,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 16, color: 'blue', x: 0.820, y: 0.890, region: 'Gummy Hills' },
   {
     index: 17,
-    color: 'orange',
+    color: 'pink',
     x: 0.870,
     y: 0.855,
     region: 'Gummy Hills',
@@ -113,7 +117,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 34, color: 'blue', x: 0.125, y: 0.485, region: 'Gingerbread House' },
   {
     index: 35,
-    color: 'orange',
+    color: 'pink',
     x: 0.162,
     y: 0.432,
     region: 'Gingerbread House',
@@ -126,7 +130,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 38, color: 'purple', x: 0.336, y: 0.448, region: 'Licorice Lagoon' },
   {
     index: 39,
-    color: 'yellow',
+    color: 'licorice',
     x: 0.394,
     y: 0.442,
     region: 'Licorice Lagoon',
@@ -136,7 +140,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 41, color: 'orange', x: 0.510, y: 0.422, region: 'Licorice Lagoon' },
   {
     index: 42,
-    color: 'green',
+    color: 'licorice',
     x: 0.568,
     y: 0.445,
     region: 'Licorice Lagoon',
@@ -147,7 +151,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 43, color: 'red', x: 0.626, y: 0.460, region: 'Lollipop Woods' },
   {
     index: 44,
-    color: 'purple',
+    color: 'pink',
     x: 0.684,
     y: 0.452,
     region: 'Lollipop Woods',
@@ -170,7 +174,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 50, color: 'purple', x: 0.905, y: 0.282, region: 'Ice Palace' },
   {
     index: 51,
-    color: 'yellow',
+    color: 'pink',
     x: 0.858,
     y: 0.232,
     region: 'Ice Palace',
@@ -206,7 +210,7 @@ export const BOARD_TILES: readonly BoardTile[] = [
   { index: 64, color: 'blue', x: 0.112, y: 0.215, region: 'Chocolate Mountain' },
   {
     index: 65,
-    color: 'orange',
+    color: 'pink',
     x: 0.108,
     y: 0.145,
     region: 'Chocolate Mountain',

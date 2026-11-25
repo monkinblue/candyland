@@ -337,7 +337,9 @@
   justify-content: center;
   gap: 0.65rem;
   transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .ac-complete-btn:hover:not(:disabled) {

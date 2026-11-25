@@ -57,6 +57,8 @@ const COLOR_HEX = {
   blue: '#00a8ff',
   orange: '#ff7b00',
   green: '#22c55e',
+  pink: '#ff85b3',
+  licorice: '#1a092b',
   rainbow: '#ff66cc',
 };
 

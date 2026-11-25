@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ActionCardSession } from '../types/game';
 import { soundEngine } from '../audio/soundEngine';
+import { useToddlerTap } from '../utils/toddlerTap';
 import { fireCelebration } from './CelebrationEffects';
 import './ActionCardOverlay.css';
 
@@ -96,6 +97,8 @@ export function ActionCardOverlay({
     onResolve(false);
   };
 
+  const completeTapProps = useToddlerTap(handleComplete, completing);
+
   const tierLabel = card.tier === 'kid' ? '🌟 KID ACTION CARD' : '🎭 FAMILY ACTION CARD';
 
   const cardBody = (
@@ -152,7 +155,7 @@ export function ActionCardOverlay({
           <button
             type="button"
             className={`ac-complete-btn ${completing ? 'is-celebrating' : ''}`}
-            onClick={handleComplete}
+            {...completeTapProps}
             disabled={completing}
             autoFocus
           >

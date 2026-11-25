@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Home,
+  Maximize2,
+  Minimize2,
   Music,
   Play,
   RotateCcw,
@@ -57,6 +59,8 @@ import { ActionCardOverlay } from './components/ActionCardOverlay';
 import { CelebrationEffects } from './components/CelebrationEffects';
 import { TvHostView } from './components/TvHostView';
 import { TabletControllerView } from './components/TabletControllerView';
+import { useFullscreen } from './utils/fullscreen';
+import { useToddlerTap } from './utils/toddlerTap';
 import './App.css';
 
 const ENGINE_CONTEXT: EngineContext = {
@@ -141,6 +145,11 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
   );
 
   const [audioState, setAudioState] = useState(() => soundEngine.getState());
+  const {
+    isSupported: canFullscreen,
+    isFullscreen,
+    toggleFullscreen,
+  } = useFullscreen();
   const victoryDialogRef = useRef<HTMLDialogElement | null>(null);
   const victoryTitleId = useId();
   const lastSpokenEventRef = useRef<string | null>(null);
@@ -290,6 +299,10 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     }));
   }, []);
 
+  const canDraw = room.phase === 'waiting-draw';
+  const drawTapProps = useToddlerTap(handleDrawCard, !canDraw);
+  const playAgainTapProps = useToddlerTap(handlePlayAgain, room.phase !== 'victory');
+
   if (room.phase === 'lobby') {
     return (
       <CharacterSelect
@@ -310,7 +323,6 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     ? room.players.find((p) => p.id === room.winnerId) ?? currentPlayer
     : null;
 
-  const canDraw = room.phase === 'waiting-draw';
   const isStuck = Boolean(currentPlayer && currentPlayer.stuckTurns > 0);
 
   return (
@@ -394,6 +406,25 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
               <Volume2 size={18} aria-hidden="true" />
             )}
           </button>
+
+          {canFullscreen && (
+            <button
+              type="button"
+              className="mirror-icon-btn"
+              onClick={() => {
+                soundEngine.playButtonTap();
+                toggleFullscreen();
+              }}
+              aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+              aria-pressed={isFullscreen}
+            >
+              {isFullscreen ? (
+                <Minimize2 size={18} aria-hidden="true" />
+              ) : (
+                <Maximize2 size={18} aria-hidden="true" />
+              )}
+            </button>
+          )}
         </div>
       </header>
 
@@ -447,7 +478,7 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
             type="button"
             className={`mirror-draw-btn ${isStuck ? 'is-stuck-btn' : ''}`}
             disabled={!canDraw}
-            onClick={handleDrawCard}
+            {...drawTapProps}
           >
             {canDraw ? (
               isStuck ? (
@@ -534,7 +565,7 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
                 type="button"
                 className="victory-btn victory-btn-primary"
                 autoFocus
-                onClick={handlePlayAgain}
+                {...playAgainTapProps}
               >
                 <RotateCcw size={22} aria-hidden="true" />
                 <span>Play Again!</span>

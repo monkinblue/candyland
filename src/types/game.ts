@@ -88,7 +88,7 @@ export interface BoardCoord {
 
 export interface BoardTile {
   index: number;
-  color: TileColor | 'rainbow';
+  color: TileColor | 'pink' | 'licorice' | 'rainbow';
   x: number;
   y: number;
   region?: string;
@@ -313,7 +313,7 @@ export const LANDMARK_META: Record<
 };
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
-  kidFriendlyLandmarks: true,
+  kidFriendlyLandmarks: false,
   enableMiniGames: true,
   enableActionCards: true,
   enableCutscenes: true,

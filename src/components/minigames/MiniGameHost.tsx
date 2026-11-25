@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { MiniGameSession, MiniGameType } from '../../types/game';
 import { soundEngine } from '../../audio/soundEngine';
+import { useToddlerTap } from '../../utils/toddlerTap';
 import { fireCelebration } from '../CelebrationEffects';
 import { CatchGumdrops } from './CatchGumdrops';
 import { ShakePeppermintTree } from './ShakePeppermintTree';
@@ -202,6 +203,9 @@ export function MiniGameHost({
     const won = finalScore >= targetScore;
     onCompleteRef.current(won, finalScore);
   }, [targetScore]);
+
+  const readyTapProps = useToddlerTap(handleConfirmReady, hostPhase !== 'confirm');
+  const continueTapProps = useToddlerTap(finishNow, hostPhase !== 'result');
 
   // Result banner celebration + auto-advance after ~2.4s
   useEffect(() => {
@@ -452,7 +456,7 @@ export function MiniGameHost({
                   <button
                     type="button"
                     className="mg-ready-start-btn"
-                    onClick={handleConfirmReady}
+                    {...readyTapProps}
                     autoFocus
                   >
                     I&apos;M READY! START! ▶
@@ -485,7 +489,7 @@ export function MiniGameHost({
               <button
                 type="button"
                 className="mg-continue-btn"
-                onClick={finishNow}
+                {...continueTapProps}
                 autoFocus
               >
                 Hop Forward! +{bonusSpaces} →

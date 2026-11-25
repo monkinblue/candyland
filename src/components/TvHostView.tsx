@@ -3,6 +3,8 @@ import QRCode from 'qrcode';
 import {
   Crown,
   LogOut,
+  Maximize2,
+  Minimize2,
   Music,
   Play,
   QrCode,
@@ -26,6 +28,7 @@ import {
 import { CHARACTERS } from '../data/characters';
 import { createPlayersFromCharacters } from '../engine/rules';
 import {
+  cleanupExpiredFirebaseRooms,
   createRoom,
   joinRoom,
   leaveRoom,
@@ -45,6 +48,8 @@ import { CelebrationEffects } from './CelebrationEffects';
 import { ActionCardOverlay } from './ActionCardOverlay';
 import { MiniGameTvOverlay } from './minigames/MiniGameTvOverlay';
 import { MiniGameHost } from './minigames/MiniGameHost';
+import { useFullscreen } from '../utils/fullscreen';
+import { useToddlerTap } from '../utils/toddlerTap';
 import './TvHostView.css';
 
 export interface TvHostViewProps {
@@ -366,6 +371,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
           if (!cancelled) {
             if (existing) {
               setRoomCode(existing.roomCode);
+              void cleanupExpiredFirebaseRooms(existing.roomCode);
             } else {
               const created = await createRoom({ roomCode: clean });
               if (!cancelled) setRoomCode(created.roomCode);
@@ -611,6 +617,25 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     void actions.finishCutscene();
   }, [actions]);
 
+  const {
+    isSupported: fullscreenSupported,
+    isFullscreen,
+    toggleFullscreen,
+  } = useFullscreen();
+
+  const handleToggleFullscreen = useCallback(() => {
+    soundEngine.playButtonTap();
+    toggleFullscreen();
+  }, [toggleFullscreen]);
+
+  const tvHudDrawTapProps = useToddlerTap(
+    () => {
+      soundEngine.playButtonTap();
+      void actions.drawCard();
+    },
+    room?.phase !== 'waiting-draw'
+  );
+
   const players: readonly PlayerState[] = room?.players ?? [];
   const currentPlayer: PlayerState | null =
     players.length > 0
@@ -772,6 +797,24 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                     <Volume2 size={24} aria-hidden="true" />
                   )}
                 </button>
+
+                {fullscreenSupported && (
+                  <button
+                    type="button"
+                    className="tv-icon-btn"
+                    aria-label={
+                      isFullscreen ? 'Exit full screen' : 'Enter full screen'
+                    }
+                    aria-pressed={isFullscreen}
+                    onClick={handleToggleFullscreen}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 size={22} aria-hidden="true" />
+                    ) : (
+                      <Maximize2 size={22} aria-hidden="true" />
+                    )}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1051,10 +1094,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                 <button
                   type="button"
                   className="tv-hud-draw-btn"
-                  onClick={() => {
-                    soundEngine.playButtonTap();
-                    void actions.drawCard();
-                  }}
+                  {...tvHudDrawTapProps}
                 >
                   <Sparkles size={20} aria-hidden="true" />
                   <span>
@@ -1107,6 +1147,24 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                   <Volume2 size={22} aria-hidden="true" />
                 )}
               </button>
+
+              {fullscreenSupported && (
+                <button
+                  type="button"
+                  className="tv-icon-btn"
+                  aria-label={
+                    isFullscreen ? 'Exit full screen' : 'Enter full screen'
+                  }
+                  aria-pressed={isFullscreen}
+                  onClick={handleToggleFullscreen}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 size={22} aria-hidden="true" />
+                  ) : (
+                    <Maximize2 size={22} aria-hidden="true" />
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"

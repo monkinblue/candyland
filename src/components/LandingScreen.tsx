@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
-import { MonitorPlay, Sparkles, TabletSmartphone, Users } from 'lucide-react';
+import {
+  Maximize2,
+  Minimize2,
+  MonitorPlay,
+  Sparkles,
+  TabletSmartphone,
+  Users,
+} from 'lucide-react';
 import { ViewMode } from '../types/game';
 import { CHARACTERS } from '../data/characters';
+import { useFullscreen } from '../utils/fullscreen';
+import { soundEngine } from '../audio/soundEngine';
 import './LandingScreen.css';
 
 export interface LandingScreenProps {
@@ -20,9 +29,30 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   isFirebaseConfigured = false,
 }) => {
   const [hiddenTokens, setHiddenTokens] = useState<Record<string, boolean>>({});
+  const { isSupported: canFullscreen, isFullscreen, toggleFullscreen } = useFullscreen();
 
   return (
     <main className="landing-page">
+      {canFullscreen && (
+        <button
+          type="button"
+          className="landing-fullscreen-btn"
+          onClick={() => {
+            soundEngine.playButtonTap();
+            toggleFullscreen();
+          }}
+          aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+          aria-pressed={isFullscreen}
+        >
+          {isFullscreen ? (
+            <Minimize2 size={20} aria-hidden="true" />
+          ) : (
+            <Maximize2 size={20} aria-hidden="true" />
+          )}
+          <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+        </button>
+      )}
+
       {/* Decorative pastel storybook sky backdrop */}
       <div className="landing-decor" aria-hidden="true">
         <span className="candy-orb candy-orb-1" />

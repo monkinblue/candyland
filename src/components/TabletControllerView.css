@@ -458,7 +458,9 @@
   justify-content: center;
   gap: 0.65rem;
   text-align: center;
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   animation: tab-gentle-bounce 2.2s ease-in-out infinite;
   transition: transform 0.12s cubic-bezier(0.22, 1.4, 0.36, 1), box-shadow 0.12s ease;
 }
@@ -620,8 +622,25 @@
 }
 
 .tab-cutscene-emoji {
-  font-size: 4rem;
+  font-size: clamp(3rem, 5vw, 4.4rem);
   line-height: 1;
+}
+
+.tab-cutscene-watch-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #ffd43b 0%, #ff8a2b 50%, #ff5e99 100%);
+  color: #ffffff;
+  border: 4px solid #ffffff;
+  box-shadow: 0 10px 26px rgba(255, 94, 153, 0.34);
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 1.05rem + 1vw, 1.85rem);
+  font-weight: 700;
+  text-shadow: 0 2px 6px rgba(59, 28, 50, 0.25);
 }
 
 .tab-cutscene-sub {
@@ -710,6 +729,9 @@
   font-weight: 700;
   border: 5px solid #ffffff;
   box-shadow: 0 9px 0 #106a34, 0 16px 32px rgba(25, 148, 76, 0.35);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tab-secondary-action-btn {

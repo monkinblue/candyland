@@ -19,6 +19,39 @@
   container-type: inline-size;
 }
 
+.landing-fullscreen-btn {
+  position: fixed;
+  top: max(0.85rem, env(safe-area-inset-top));
+  right: max(0.95rem, env(safe-area-inset-right));
+  z-index: 20;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 0.48rem 1rem;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #5b1d8c;
+  border: 3px solid rgba(155, 81, 224, 0.32);
+  box-shadow: 0 8px 20px rgba(59, 28, 50, 0.16);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  transition: transform 0.16s ease, background-color 0.16s ease;
+}
+
+.landing-fullscreen-btn:hover {
+  background: #ffd43b;
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.landing-fullscreen-btn:focus-visible {
+  outline: 4px solid #ffd43b;
+  outline-offset: 4px;
+}
+
 .landing-decor {
   position: fixed;
   inset: 0;

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { FastForward, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import {
   BoardCoord,
   BoardShortcut,
@@ -360,13 +360,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
     };
   }, [movement, getCoordForTile]);
 
-  // Native <dialog> cutscene controller
+  // Native <dialog> cutscene controller (pure full-screen video, zero overlay banner)
   const cutsceneDialogRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const cutsceneTitleId = useId();
   const [videoFailed, setVideoFailed] = useState(false);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
-  const [autoplayBlockedNotice, setAutoplayBlockedNotice] = useState(false);
   const completedCutsceneRef = useRef<string | null>(null);
   const onCutsceneCompleteRef = useRef(onCutsceneComplete);
   onCutsceneCompleteRef.current = onCutsceneComplete;
@@ -391,8 +388,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
     if (cutscene) {
       setVideoFailed(false);
-      setAutoplayBlockedNotice(false);
-      setIsVideoMuted(false);
       if (!dialog.open) {
         dialog.showModal();
       }
@@ -401,7 +396,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     }
   }, [cutscene]);
 
-  // Intercept native cancel (Esc / back) so top-layer exit animates smoothly
+  // Intercept native cancel (Esc / back) as a silent parent safety hatch
   useEffect(() => {
     const dialog = cutsceneDialogRef.current;
     if (!dialog) return;
@@ -413,7 +408,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     return () => dialog.removeEventListener('cancel', handleCancel);
   }, [cutscene, dismissCutscene]);
 
-  // Attempt unmuted playback; fall back cleanly to muted playback if browser blocks autoplay
+  // Attempt unmuted playback; silently retry muted if autoplay blocks sound
   useEffect(() => {
     if (!cutscene) return;
     if (!cutscene.videoUrl || videoFailed) {
@@ -432,32 +427,25 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const playPromise = video.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch(() => {
-        // Autoplay with sound was blocked (common on TV Bro before user tap)
         video.muted = true;
-        setIsVideoMuted(true);
-        setAutoplayBlockedNotice(true);
         video.play().catch(() => {
           setVideoFailed(true);
         });
       });
     }
 
-    // Safety cap: never hang longer than 14 seconds on a stalled video
+    // Safety cap: never hang longer than 12 seconds on a stalled video
     const safetyTimer = window.setTimeout(() => {
       void dismissCutscene(cutscene);
-    }, 14000);
+    }, 12000);
 
     return () => window.clearTimeout(safetyTimer);
   }, [cutscene, videoFailed, dismissCutscene]);
 
-  const handleToggleCutsceneMute = () => {
+  const handleVideoSurfaceTap = () => {
     const video = videoRef.current;
-    if (!video) return;
-    const nextMuted = !video.muted;
-    video.muted = nextMuted;
-    setIsVideoMuted(nextMuted);
-    if (!nextMuted) {
-      setAutoplayBlockedNotice(false);
+    if (video && video.muted) {
+      video.muted = false;
     }
   };
 
@@ -512,7 +500,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   cx={tile.x * 1600}
                   cy={tile.y * 900}
                   r={18}
-                  fill={tile.color === 'rainbow' ? '#ffbf2e' : `var(--candy-${tile.color})`}
+                  fill={
+                    tile.color === 'rainbow'
+                      ? '#ffbf2e'
+                      : tile.color === 'pink'
+                        ? '#ff85b3'
+                        : tile.color === 'licorice'
+                          ? '#2c1638'
+                          : `var(--candy-${tile.color})`
+                  }
                   stroke="#ffffff"
                   strokeWidth={4}
                 />
@@ -684,11 +680,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
         </div>
       </div>
 
-      {/* Native Full-Screen Top-Layer <dialog> for AI Video Cutscenes */}
+      {/* Native Pure Full-Screen Top-Layer <dialog> for AI Video Cutscenes */}
       <dialog
         ref={cutsceneDialogRef}
         className="cutscene-dialog"
-        aria-labelledby={cutsceneTitleId}
+        aria-label={cutscene?.title ?? 'Candyland video cutscene'}
       >
         {cutscene && (
           <div className={`cutscene-shell cutscene-theme-${cutscene.type}`}>
@@ -700,6 +696,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   className="cutscene-video"
                   playsInline
                   autoPlay
+                  onClick={handleVideoSurfaceTap}
                   onEnded={() => void dismissCutscene(cutscene)}
                   onError={() => setVideoFailed(true)}
                 />
@@ -713,45 +710,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     alt={cutscene.playerName}
                     className="cutscene-fallback-portrait"
                   />
+                  <h1 className="cutscene-title">{cutscene.title}</h1>
+                  <p className="cutscene-subtitle">{cutscene.subtitle}</p>
                   <div className="cutscene-fallback-badge">✨ Special Candyland Moment! ✨</div>
                 </div>
               )}
-            </div>
-
-            {/* Captions & Accessible Title Bar */}
-            <div className="cutscene-caption-bar">
-              <div className="cutscene-caption-text">
-                <h1 id={cutsceneTitleId} className="cutscene-title">
-                  {cutscene.title}
-                </h1>
-                <p className="cutscene-subtitle">{cutscene.subtitle}</p>
-              </div>
-
-              <div className="cutscene-controls">
-                {cutscene.videoUrl && !videoFailed && (
-                  <button
-                    type="button"
-                    className={`cutscene-btn cutscene-btn-sound ${
-                      autoplayBlockedNotice ? 'is-attention' : ''
-                    }`}
-                    onClick={handleToggleCutsceneMute}
-                    aria-label={isVideoMuted ? 'Unmute cutscene audio' : 'Mute cutscene audio'}
-                  >
-                    {isVideoMuted ? <VolumeX size={24} aria-hidden="true" /> : <Volume2 size={24} aria-hidden="true" />}
-                    <span>{isVideoMuted ? 'Tap for Sound' : 'Sound On'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className="cutscene-btn cutscene-btn-skip"
-                  autoFocus
-                  onClick={() => void dismissCutscene(cutscene)}
-                >
-                  <FastForward size={24} aria-hidden="true" />
-                  <span>Skip Cutscene</span>
-                </button>
-              </div>
             </div>
           </div>
         )}

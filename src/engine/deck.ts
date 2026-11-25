@@ -91,7 +91,7 @@ export function createDeck(
     }
   }
 
-  // Landmark cards (1 each of the 7 board landmarks)
+  // Pink Candy Landmark cards (1 each of the 7 board candy landmarks — can jump forward or backward!)
   for (const landmark of LANDMARK_CARDS) {
     const meta = LANDMARK_META[landmark];
     cards.push({
@@ -100,7 +100,7 @@ export function createDeck(
       color: null,
       landmark,
       label: meta.label,
-      subtitle: `Magical trip to ${meta.regionName}!`,
+      subtitle: `Jump forward or back to ${meta.regionName}!`,
       emoji: meta.emoji,
     });
   }

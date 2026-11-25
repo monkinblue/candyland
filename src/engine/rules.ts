@@ -321,6 +321,8 @@ export function computeMovementForCard(
 
     for (const tile of tiles) {
       if (tile.index <= start) continue;
+      // Regular single/double color cards strictly skip 'pink' candy landmark tiles and 'licorice' traps
+      if (tile.color === 'pink' || tile.color === 'licorice') continue;
       if (tile.color === card.color || tile.color === 'rainbow') {
         found += 1;
         target = tile.index;
@@ -354,10 +356,12 @@ export function computeMovementForCard(
     let banner = `${player.name} zooms to ${meta.label}! ${meta.emoji}`;
 
     if (isBackward && settings.kidFriendlyLandmarks && player.isKid) {
-      // Kid-friendly protection: never pull a 3- or 4-year-old backwards!
+      // Optional kid-friendly protection when toggled ON: advance forward instead of pulling backwards
       target = Math.min(start + 3, lastIndex);
       isBackward = false;
       banner = `Sweet Landmark Boost! ${player.name} hops +3 spaces! ✨`;
+    } else if (isBackward) {
+      banner = `Whoa! Back to ${meta.label}! ${meta.emoji}`;
     } else if (target === start) {
       target = Math.min(start + 1, lastIndex);
       banner = `Already at ${meta.label}! ${player.name} hops +1 bonus space!`;
@@ -378,9 +382,9 @@ export function computeMovementForCard(
   }
 
   if (card.type === 'licorice') {
-    // Move to the nearest Licorice Lagoon trap ahead within 16 tiles, or stick in place!
+    // Move to the nearest Licorice Lagoon trap ahead within 24 tiles, or stick in place!
     const aheadTrap = tiles.find(
-      (t) => t.isLicoriceTrap && t.index > start && t.index - start <= 16
+      (t) => t.isLicoriceTrap && t.index > start && t.index - start <= 24
     );
     const target = aheadTrap ? aheadTrap.index : start;
     return {

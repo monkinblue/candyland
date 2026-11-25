@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  endAt,
   get,
   onDisconnect,
   onValue,
+  orderByChild,
+  query,
   ref,
+  remove,
   runTransaction,
   set,
   update,
@@ -514,6 +518,80 @@ function writeLocalRoom(state: GameRoomState): GameRoomState {
   return clean;
 }
 
+export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+const LOCAL_ROOM_TTL_MS = ROOM_TTL_MS;
+
+function deleteLocalRoom(roomCode: string): void {
+  const code = roomCode.toUpperCase();
+  localMemoryCache.delete(code);
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(localKey(code));
+    } catch {
+      // Ignore restricted storage errors
+    }
+  }
+
+  const channel = ensureLocalChannel();
+  if (channel) {
+    try {
+      const msg: LocalBroadcastMessage = {
+        type: 'room-deleted',
+        roomCode: code,
+        state: null,
+        senderId: TAB_SENDER_ID,
+        timestamp: Date.now(),
+      };
+      channel.postMessage(msg);
+    } catch {
+      // Ignore closed channel errors
+    }
+  }
+
+  notifyLocalListeners(code, null);
+}
+
+/**
+ * Best-effort sweep removing stale or malformed Candyland rooms in localStorage
+ * older than 24 hours so test and finished sessions never pile up.
+ */
+export function sweepStaleLocalRooms(maxAgeMs = LOCAL_ROOM_TTL_MS): number {
+  if (typeof window === 'undefined') return 0;
+  let removed = 0;
+  const now = Date.now();
+  try {
+    const keysToCheck: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(LOCAL_STORAGE_PREFIX)) {
+        keysToCheck.push(k);
+      }
+    }
+    for (const key of keysToCheck) {
+      const code = key.slice(LOCAL_STORAGE_PREFIX.length).toUpperCase();
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = normalizeFirebaseRoom(JSON.parse(raw));
+        const isStale = !parsed || now - parsed.updatedAt > maxAgeMs;
+        if (isStale) {
+          window.localStorage.removeItem(key);
+          localMemoryCache.delete(code);
+          removed += 1;
+        }
+      } catch {
+        window.localStorage.removeItem(key);
+        localMemoryCache.delete(code);
+        removed += 1;
+      }
+    }
+  } catch {
+    // Ignore storage access errors in private browsing
+  }
+  return removed;
+}
+
 function subscribeLocalRoom(
   roomCode: string,
   listener: LocalRoomListener
@@ -587,7 +665,10 @@ export async function mutateRoom(
       if (!next) {
         return; // Abort cleanly
       }
-      resultState = stripUndefinedForFirebase(next);
+      resultState = stripUndefinedForFirebase({
+        ...next,
+        updatedAt: Date.now(),
+      });
       return resultState;
     });
 
@@ -601,7 +682,10 @@ export async function mutateRoom(
   if (!current) return null;
   const next = updater(current);
   if (!next) return current;
-  return writeLocalRoom(next);
+  return writeLocalRoom({
+    ...next,
+    updatedAt: Date.now(),
+  });
 }
 
 // ============================================================================
@@ -640,7 +724,8 @@ async function flushMiniGameScore(
     // and never rewrite the whole deck during rapid 10Hz score updates.
     const mgRef = ref(db, `rooms/${code}/miniGame`);
     try {
-      await runTransaction(mgRef, (currentMg: unknown) => {
+      const now = Date.now();
+      const tx = await runTransaction(mgRef, (currentMg: unknown) => {
         if (!currentMg || typeof currentMg !== 'object') {
           return; // Mini-game already ended; abort write
         }
@@ -653,9 +738,14 @@ async function flushMiniGameScore(
           score,
           progress: clampedProgress,
           status: 'playing',
-          updatedAt: Date.now(),
+          updatedAt: now,
         };
       });
+      if (tx.committed) {
+        void update(ref(db, `rooms/${code}`), { updatedAt: now }).catch(
+          () => {}
+        );
+      }
     } catch {
       // Non-fatal transient network hiccup during live score stream
     }
@@ -711,9 +801,94 @@ export function submitMiniGameScore(
 // Public Atomic Action Dispatchers
 // ============================================================================
 
+// Tracks rooms currently being explicitly left so useGameRoom unmount cleanup
+// doesn't race with `remove(roomRef)` or re-create a deleted room node.
+const explicitlyLeavingRooms = new Set<string>();
+
+function shouldDeleteRoomOnLeave(
+  existing: GameRoomState,
+  role: SyncRole
+): boolean {
+  if (role === 'host') {
+    return (
+      !existing.tabletConnected ||
+      existing.phase === 'lobby' ||
+      existing.phase === 'victory'
+    );
+  }
+  if (role === 'tablet') {
+    return (
+      !existing.hostConnected &&
+      (existing.phase === 'lobby' || existing.phase === 'victory')
+    );
+  }
+  return false;
+}
+
+/**
+ * Lightweight client-side cleanup triggered on TV Host startup:
+ * Queries Firebase RTDB `rooms` indexed by `updatedAt` and deletes any room
+ * older than `maxAgeMs` (default: 24 hours). Never throws or blocks hosting.
+ */
+export async function cleanupExpiredFirebaseRooms(
+  excludeRoomCode?: string,
+  maxAgeMs = ROOM_TTL_MS
+): Promise<number> {
+  const db = getFirebaseDb();
+  if (!db) return 0;
+
+  const normalizedExclude = excludeRoomCode
+    ? sanitizeRoomCode(excludeRoomCode)
+    : null;
+  const cutoff = Date.now() - maxAgeMs;
+
+  try {
+    const expiredQuery = query(
+      ref(db, 'rooms'),
+      orderByChild('updatedAt'),
+      endAt(cutoff)
+    );
+    const snapshot = await get(expiredQuery);
+    if (!snapshot.exists()) return 0;
+
+    const removals: Promise<boolean>[] = [];
+    snapshot.forEach((childSnap) => {
+      const key = childSnap.key;
+      if (!key || !isValidRoomCode(key)) return;
+      if (normalizedExclude && key === normalizedExclude) return;
+
+      const val = childSnap.val() as { updatedAt?: unknown } | null;
+      const isExpired =
+        !val || typeof val.updatedAt !== 'number' || val.updatedAt <= cutoff;
+      if (!isExpired) return;
+
+      removals.push(
+        remove(ref(db, `rooms/${key}`))
+          .then(() => {
+            deleteLocalRoom(key);
+            return true;
+          })
+          .catch(() => false)
+      );
+    });
+
+    if (removals.length === 0) return 0;
+    const settled = await Promise.allSettled(removals);
+    return settled.filter(
+      (res) => res.status === 'fulfilled' && res.value === true
+    ).length;
+  } catch {
+    // Best-effort sweep must never disrupt room hosting if offline or restricted
+    return 0;
+  }
+}
+
 export async function createRoom(
   options: CreateRoomOptions = {}
 ): Promise<GameRoomState> {
+  // Lightweight sweep of stale localStorage rooms (> 24h old)
+  sweepStaleLocalRooms();
+
   const db = getFirebaseDb();
   let code = options.roomCode
     ? sanitizeRoomCode(options.roomCode)
@@ -737,12 +912,17 @@ export async function createRoom(
     }
   }
 
-  const initial = stripUndefinedForFirebase(
-    createInitialRoomState(code, options.players ?? [], options.settings)
-  );
+  explicitlyLeavingRooms.delete(code);
+
+  const initial = stripUndefinedForFirebase({
+    ...createInitialRoomState(code, options.players ?? [], options.settings),
+    updatedAt: Date.now(),
+  });
 
   if (db) {
     await set(ref(db, `rooms/${code}`), initial);
+    // Non-blocking 24h expired room sweep across Firebase RTDB
+    void cleanupExpiredFirebaseRooms(code);
     return initial;
   }
 
@@ -755,6 +935,8 @@ export async function joinRoom(
 ): Promise<GameRoomState | null> {
   const code = sanitizeRoomCode(roomCode);
   if (!isValidRoomCode(code)) return null;
+
+  explicitlyLeavingRooms.delete(code);
 
   const existing = await getRoomSnapshot(code);
   if (!existing) return null;
@@ -777,29 +959,80 @@ export async function leaveRoom(
   const code = sanitizeRoomCode(roomCode);
   if (!isValidRoomCode(code)) return;
 
+  explicitlyLeavingRooms.add(code);
   cancelPendingMiniGameScore(code);
+  cancelPendingPlayerWrites(code);
 
-  const db = getFirebaseDb();
-  if (db) {
-    const existing = await getRoomSnapshot(code);
-    if (!existing) return;
-    const patch: Record<string, unknown> = { updatedAt: Date.now() };
-    if (role === 'tablet') patch.tabletConnected = false;
-    if (role === 'host') patch.hostConnected = false;
-    try {
-      await update(ref(db, `rooms/${code}`), patch);
-    } catch {
-      // Ignore disconnect errors on unmount
+  const scheduleLeavingFlagClear = () => {
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => explicitlyLeavingRooms.delete(code), 1500);
+    } else {
+      explicitlyLeavingRooms.delete(code);
     }
-    return;
-  }
+  };
 
-  await mutateRoom(code, (current) => ({
-    ...current,
-    updatedAt: Date.now(),
-    tabletConnected: role === 'tablet' ? false : current.tabletConnected,
-    hostConnected: role === 'host' ? false : current.hostConnected,
-  }));
+  try {
+    const db = getFirebaseDb();
+    if (db) {
+      const presenceField =
+        role === 'tablet'
+          ? 'tabletConnected'
+          : role === 'host'
+            ? 'hostConnected'
+            : null;
+
+      if (presenceField) {
+        try {
+          await onDisconnect(ref(db, `rooms/${code}/${presenceField}`)).cancel();
+        } catch {
+          // Safe to ignore if already disconnected
+        }
+      }
+
+      const existing = await getRoomSnapshot(code);
+      if (!existing) {
+        deleteLocalRoom(code);
+        return;
+      }
+
+      if (shouldDeleteRoomOnLeave(existing, role)) {
+        try {
+          await remove(ref(db, `rooms/${code}`));
+        } catch {
+          // Ignore transient disconnect errors during room deletion
+        }
+        deleteLocalRoom(code);
+        return;
+      }
+
+      const patch: Record<string, unknown> = { updatedAt: Date.now() };
+      if (role === 'tablet') patch.tabletConnected = false;
+      if (role === 'host') patch.hostConnected = false;
+      try {
+        await update(ref(db, `rooms/${code}`), patch);
+      } catch {
+        // Ignore disconnect errors on unmount
+      }
+      return;
+    }
+
+    const localExisting = readLocalRoom(code);
+    if (!localExisting) return;
+
+    if (shouldDeleteRoomOnLeave(localExisting, role)) {
+      deleteLocalRoom(code);
+      return;
+    }
+
+    await mutateRoom(code, (current) => ({
+      ...current,
+      updatedAt: Date.now(),
+      tabletConnected: role === 'tablet' ? false : current.tabletConnected,
+      hostConnected: role === 'host' ? false : current.hostConnected,
+    }));
+  } finally {
+    scheduleLeavingFlagClear();
+  }
 }
 
 // ============================================================================
@@ -871,6 +1104,19 @@ async function waitForPendingPlayerWrites(roomCode: string): Promise<void> {
   await new Promise<void>((resolve) => {
     entry.waiters.push(() => resolve());
   });
+}
+
+function cancelPendingPlayerWrites(roomCode: string): void {
+  const code = sanitizeRoomCode(roomCode);
+  const entry = playerWriteQueues.get(code);
+  if (!entry) return;
+  entry.pending = null;
+  entry.latestDesired = null;
+  const resolvers = entry.waiters.splice(0, entry.waiters.length);
+  playerWriteQueues.delete(code);
+  for (const resolve of resolvers) {
+    resolve(null);
+  }
 }
 
 export async function updatePlayers(
@@ -1196,10 +1442,12 @@ export function useGameRoom(
         unsubOptimistic();
         unsubRoom();
         cancelPendingMiniGameScore(normalizedCode);
-        if (presenceField && roomExists) {
-          void set(ref(db, `rooms/${normalizedCode}/${presenceField}`), false).catch(
-            () => {}
-          );
+        if (presenceField) {
+          const fieldRef = ref(db, `rooms/${normalizedCode}/${presenceField}`);
+          void onDisconnect(fieldRef).cancel().catch(() => {});
+          if (roomExists && !explicitlyLeavingRooms.has(normalizedCode)) {
+            void set(fieldRef, false).catch(() => {});
+          }
         }
       };
     }
@@ -1252,6 +1500,9 @@ export function useGameRoom(
       cancelPendingMiniGameScore(normalizedCode);
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', handleBeforeUnload);
+      }
+      if (explicitlyLeavingRooms.has(normalizedCode)) {
+        return;
       }
       const current = readLocalRoom(normalizedCode);
       if (current) {

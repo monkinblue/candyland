@@ -316,6 +316,9 @@
   box-shadow:
     0 8px 0 #8a1446,
     0 14px 28px rgba(224, 49, 119, 0.36);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s ease;
 }
 
@@ -528,6 +531,9 @@
   color: #ffffff;
   border: 3px solid #ffffff;
   box-shadow: 0 7px 0 #0e6f35;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .victory-btn-secondary {
