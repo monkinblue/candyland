@@ -541,7 +541,8 @@
    ========================================================================== */
 
 .tab-drawn-card-panel,
-.tab-cutscene-panel {
+.tab-cutscene-panel,
+.tab-ai-spectator-panel {
   width: min(620px, 100%);
   background: rgba(255, 255, 255, 0.96);
   border: 6px solid #ffffff;
@@ -554,6 +555,45 @@
   align-items: center;
   gap: 1.1rem;
   text-align: center;
+}
+
+.tab-ai-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 1.2rem;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #12b886 0%, #0ca678 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 16px rgba(18, 184, 134, 0.28);
+}
+
+.tab-ai-live-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.5rem 1.4rem;
+  border-radius: var(--radius-pill);
+  background: #fff9db;
+  border: 3px solid #ffbf2e;
+  font-family: var(--font-display);
+}
+
+.tab-ai-score-num {
+  font-size: clamp(2.1rem, 1.6rem + 2vw, 3.2rem);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tab-ai-score-goal {
+  font-size: clamp(1.2rem, 1rem + 0.8vw, 1.6rem);
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 
 .tab-card-swatches {

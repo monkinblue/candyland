@@ -244,11 +244,13 @@ export const CharacterSelect: React.FC<CharacterSelectProps> = ({
                   <span className="char-join-hint">Tap to Join</span>
                 )}
 
-                {/* Kid / Adult Action Card Tier Pill */}
+                {/* Kid / Adult / AI Badge */}
                 <span
-                  className={`char-tier-pill ${char.isKid ? 'is-kid' : 'is-adult'}`}
+                  className={`char-tier-pill ${
+                    char.isAi ? 'is-ai' : char.isKid ? 'is-kid' : 'is-adult'
+                  }`}
                 >
-                  {char.isKid ? '🌟 Kid' : '🎭 Adult'}
+                  {char.isAi ? '🤖 AI' : char.isKid ? '🌟 Kid' : '🎭 Adult'}
                 </span>
 
                 {/* Candyland Illustrated Portrait */}
@@ -337,6 +339,11 @@ export const CharacterSelect: React.FC<CharacterSelectProps> = ({
                       )}
                     </div>
                     <span className="turn-chip-name">{player.name}</span>
+                    {player.isAi && (
+                      <span className="turn-chip-ai" aria-label="AI player">
+                        🤖 AI
+                      </span>
+                    )}
 
                     <div className="turn-chip-actions">
                       <button

@@ -32,6 +32,7 @@ import {
   type EngineContext,
 } from '../engine/rules';
 import type {
+  ActivityLogEntry,
   GameRoomState,
   GameSettings,
   PlayerState,
@@ -345,10 +346,14 @@ export function normalizeFirebaseRoom(raw: unknown): GameRoomState | null {
 
   const coerced: Partial<GameRoomState> = {
     ...(obj as Partial<GameRoomState>),
-    players: coerceArray<PlayerState>(obj.players),
+    players: coerceArray<PlayerState>(obj.players).map((p) => ({
+      ...p,
+      isAi: Boolean(p.isAi),
+    })),
     deck: coerceArray(obj.deck),
     discardPile: coerceArray(obj.discardPile),
     usedActionCardIds: coerceArray<string>(obj.usedActionCardIds),
+    activityLog: coerceArray<ActivityLogEntry>(obj.activityLog),
     movement: rawMovement
       ? ({
           ...rawMovement,
@@ -1128,6 +1133,7 @@ export async function updatePlayers(
 
   const indexed = players.map((p, idx) => ({
     ...p,
+    isAi: Boolean(p.isAi),
     turnOrder: idx,
   }));
 
@@ -1287,6 +1293,7 @@ export async function returnToLobby(
     cutscene: null,
     winnerId: null,
     celebration: null,
+    activityLog: [],
     lastEventBanner: 'Pick your family characters for the next adventure!',
   }));
 }

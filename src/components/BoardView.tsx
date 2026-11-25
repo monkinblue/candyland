@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import {
+  ActivityLogEntry,
   BoardCoord,
   BoardShortcut,
   BoardTile,
@@ -15,6 +16,7 @@ import {
   BOARD_TILES,
   START_COORD,
 } from '../data/boardData';
+import { soundEngine } from '../audio/soundEngine';
 import './BoardView.css';
 
 export interface BoardViewProps {
@@ -38,6 +40,8 @@ export interface BoardViewProps {
   onMovementComplete?: (movementStartedAt: number) => void;
   /** Fired when the active cutscene ends or is skipped. */
   onCutsceneComplete?: (cutsceneId: string) => void;
+  /** Optional rolling activity log (renders latest 5 entries in open sky right of Candy Castle). */
+  activityLog?: readonly ActivityLogEntry[];
   /** Optional className for outer stage wrapper. */
   className?: string;
 }
@@ -189,6 +193,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onHopStep,
   onMovementComplete,
   onCutsceneComplete,
+  activityLog,
   className = '',
 }) => {
   const effectiveTiles = tiles && tiles.length > 0 ? tiles : DEFAULT_BOARD_TILES;
@@ -241,6 +246,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const [animCoord, setAnimCoord] = useState<BoardCoord | null>(null);
   const [animHopTick, setAnimHopTick] = useState(0);
   const [isShortcutGliding, setIsShortcutGliding] = useState(false);
+  const [isLandmarkGliding, setIsLandmarkGliding] = useState(false);
 
   const completedMovementRef = useRef<number | null>(null);
   const onHopStepRef = useRef(onHopStep);
@@ -248,12 +254,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onHopStepRef.current = onHopStep;
   onMovementCompleteRef.current = onMovementComplete;
 
-  // Execute smooth hop-by-hop + curved shortcut glide animation whenever `movement` changes
+  // Execute calm, unhurried hop-by-hop + curved shortcut / landmark glide animation
   useEffect(() => {
     if (!movement) {
       setAnimPlayerId(null);
       setAnimCoord(null);
       setIsShortcutGliding(false);
+      setIsLandmarkGliding(false);
       return;
     }
 
@@ -266,26 +273,51 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const timeouts: number[] = [];
     let rafId = 0;
 
+    const schedule = (fn: () => void, ms: number) => {
+      const id = window.setTimeout(() => {
+        if (!cancelled) fn();
+      }, ms);
+      timeouts.push(id);
+      return id;
+    };
+
+    const delay = (ms: number) =>
+      new Promise<void>((resolve) => {
+        schedule(resolve, ms);
+      });
+
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-    const finishMove = () => {
+    const finishMove = (settleMs = 900) => {
       if (cancelled) return;
-      completedMovementRef.current = moveKey;
       setIsShortcutGliding(false);
+      setIsLandmarkGliding(false);
       setAnimCoord(getCoordForTile(movement.toTile));
-      onMovementCompleteRef.current?.(moveKey);
+
+      // Calm landing settle + wait for any active narrator clip + gentle breath
+      // so narrator voiceovers NEVER get cut off by cutscenes, mini-games, or next turn
+      void (async () => {
+        await Promise.all([
+          delay(settleMs),
+          soundEngine.waitForVoiceToFinish(4500),
+        ]);
+        if (cancelled) return;
+        await delay(250);
+        if (cancelled) return;
+        completedMovementRef.current = moveKey;
+        onMovementCompleteRef.current?.(moveKey);
+      })();
     };
 
     const fullPath = movement.path.length > 0 ? movement.path : [movement.toTile];
 
-    // Reduced-motion fast path: jump directly to destination
+    // Reduced-motion fast path: jump directly to destination with calm voice-aware settle
     if (prefersReducedMotion) {
       setAnimPlayerId(movement.playerId);
       setAnimCoord(getCoordForTile(movement.toTile));
-      const t = window.setTimeout(finishMove, 220);
-      timeouts.push(t);
+      finishMove(450);
       return () => {
         cancelled = true;
         timeouts.forEach((id) => window.clearTimeout(id));
@@ -298,17 +330,26 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const hasShortcutGlide =
       Boolean(movement.shortcutUsed) && movement.shortcutWaypoints.length >= 2;
     const normalSteps = hasShortcutGlide ? fullPath.slice(0, -1) : fullPath;
-    const stepDurationMs = normalSteps.length > 8 ? 240 : 320;
+    const isLongLandmarkGlide =
+      !hasShortcutGlide &&
+      normalSteps.length === 1 &&
+      Math.abs(movement.toTile - movement.fromTile) > 6;
+    const stepDurationMs = isLongLandmarkGlide
+      ? 950
+      : normalSteps.length > 8
+        ? 350
+        : 440;
 
     let stepIdx = 0;
 
     const runShortcutGlide = () => {
       if (cancelled) return;
+      setIsLandmarkGliding(false);
       setIsShortcutGliding(true);
       onHopStepRef.current?.(normalSteps.length, movement.toTile, true);
 
       const startTime = performance.now();
-      const glideDuration = 950;
+      const glideDuration = 1200;
       const waypoints = movement.shortcutWaypoints;
 
       const tick = (now: number) => {
@@ -318,8 +359,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         if (progress < 1) {
           rafId = window.requestAnimationFrame(tick);
         } else {
-          const settle = window.setTimeout(finishMove, 260);
-          timeouts.push(settle);
+          finishMove(900);
         }
       };
 
@@ -330,28 +370,25 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (cancelled) return;
       if (stepIdx >= normalSteps.length) {
         if (hasShortcutGlide) {
-          const pauseBeforeGlide = window.setTimeout(runShortcutGlide, 240);
-          timeouts.push(pauseBeforeGlide);
+          schedule(runShortcutGlide, 480);
         } else {
-          const settle = window.setTimeout(finishMove, 260);
-          timeouts.push(settle);
+          finishMove(900);
         }
         return;
       }
 
       const targetTileIndex = normalSteps[stepIdx];
       const nextCoord = getCoordForTile(targetTileIndex);
+      setIsLandmarkGliding(isLongLandmarkGlide);
       setAnimCoord(nextCoord);
       setAnimHopTick((v) => v + 1);
-      onHopStepRef.current?.(stepIdx, targetTileIndex, false);
+      onHopStepRef.current?.(stepIdx, targetTileIndex, isLongLandmarkGlide);
       stepIdx += 1;
 
-      const timer = window.setTimeout(runNextHop, stepDurationMs);
-      timeouts.push(timer);
+      schedule(runNextHop, stepDurationMs);
     };
 
-    const kickOff = window.setTimeout(runNextHop, 160);
-    timeouts.push(kickOff);
+    schedule(runNextHop, 380);
 
     return () => {
       cancelled = true;
@@ -363,6 +400,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Native <dialog> cutscene controller (pure full-screen video, zero overlay banner)
   const cutsceneDialogRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cutsceneEndTimerRef = useRef<number | null>(null);
   const [videoFailed, setVideoFailed] = useState(false);
   const completedCutsceneRef = useRef<string | null>(null);
   const onCutsceneCompleteRef = useRef(onCutsceneComplete);
@@ -370,6 +408,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
   const dismissCutscene = useCallback(
     async (session: CutsceneSession | null) => {
+      if (cutsceneEndTimerRef.current !== null) {
+        window.clearTimeout(cutsceneEndTimerRef.current);
+        cutsceneEndTimerRef.current = null;
+      }
       const dialog = cutsceneDialogRef.current;
       if (dialog && dialog.open) {
         await closeTopLayerDialog(dialog);
@@ -381,6 +423,28 @@ export const BoardView: React.FC<BoardViewProps> = ({
     },
     []
   );
+
+  // Gentle 450ms post-cutscene breath when video ends naturally before next narrator speaks
+  const handleVideoEnded = useCallback(
+    (session: CutsceneSession) => {
+      if (cutsceneEndTimerRef.current !== null) {
+        window.clearTimeout(cutsceneEndTimerRef.current);
+      }
+      cutsceneEndTimerRef.current = window.setTimeout(() => {
+        cutsceneEndTimerRef.current = null;
+        void dismissCutscene(session);
+      }, 450);
+    },
+    [dismissCutscene]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (cutsceneEndTimerRef.current !== null) {
+        window.clearTimeout(cutsceneEndTimerRef.current);
+      }
+    };
+  }, [cutscene?.id]);
 
   useEffect(() => {
     const dialog = cutsceneDialogRef.current;
@@ -627,6 +691,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   isActive ? 'is-active' : '',
                   isMoving ? 'is-moving' : '',
                   isMoving && isShortcutGliding ? 'is-gliding' : '',
+                  isMoving && isLandmarkGliding ? 'is-landmark-gliding' : '',
                   player.stuckTurns > 0 ? 'is-stuck' : '',
                 ]
                   .filter(Boolean)
@@ -638,7 +703,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
               >
                 <div
                   key={isMoving ? `hop-${animHopTick}` : 'idle'}
-                  className={`board-token-inner ${isMoving && !isShortcutGliding ? 'is-hopping' : ''}`}
+                  className={`board-token-inner ${
+                    isMoving && !isShortcutGliding && !isLandmarkGliding ? 'is-hopping' : ''
+                  }`}
                 >
                   {isActive && <span className="board-token-halo" aria-hidden="true" />}
 
@@ -678,6 +745,39 @@ export const BoardView: React.FC<BoardViewProps> = ({
             );
           })}
         </div>
+
+        {/* Real-time 5-line Rolling Activity Log nestled in the sky right of Candy Castle */}
+        {activityLog && activityLog.length > 0 && (
+          <aside
+            className="board-activity-log"
+            aria-label="Recent game activity"
+            aria-live="polite"
+            aria-atomic="false"
+          >
+            <ol className="board-activity-list">
+              {activityLog.slice(-5).map((entry, idx, visible) => {
+                const isLatest = idx === visible.length - 1;
+                return (
+                  <li
+                    key={entry.id}
+                    className={`board-activity-item ${isLatest ? 'is-latest' : ''}`}
+                    style={
+                      {
+                        '--entry-color': entry.playerColor ?? '#9b51e0',
+                      } as React.CSSProperties
+                    }
+                  >
+                    <span className="board-activity-dot" aria-hidden="true" />
+                    <span className="board-activity-emoji" aria-hidden="true">
+                      {entry.emoji}
+                    </span>
+                    <span className="board-activity-text">{entry.text}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </aside>
+        )}
       </div>
 
       {/* Native Pure Full-Screen Top-Layer <dialog> for AI Video Cutscenes */}
@@ -697,7 +797,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                   playsInline
                   autoPlay
                   onClick={handleVideoSurfaceTap}
-                  onEnded={() => void dismissCutscene(cutscene)}
+                  onEnded={() => handleVideoEnded(cutscene)}
                   onError={() => setVideoFailed(true)}
                 />
               ) : (

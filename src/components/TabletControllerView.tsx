@@ -183,6 +183,9 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
   ]);
   const leaveDialogRef = useRef<HTMLDialogElement | null>(null);
   const autoJoinAttemptedRef = useRef<string | null>(null);
+  const lastSoloAiDrawKeyRef = useRef<string | null>(null);
+  const completedSoloAiMiniGameIdRef = useRef<string | null>(null);
+  const completedSoloAiActionIdRef = useRef<string | null>(null);
 
   const codeLabelId = useId();
   const codeHintId = useId();
@@ -243,28 +246,155 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
   const { room, loading, connectionStatus, transportMode, actions } =
     useGameRoom(joinedRoomCode, 'tablet');
 
+  const activePlayers: readonly PlayerState[] = room?.players ?? [];
+  const activeTurnPlayer: PlayerState | null =
+    activePlayers.length > 0
+      ? (activePlayers[room?.currentPlayerIndex ?? 0] ?? activePlayers[0])
+      : null;
+  const isActiveTurnAi = Boolean(activeTurnPlayer?.isAi);
+  const activeMiniGamePlayer: PlayerState | null = room?.miniGame
+    ? (activePlayers.find((p) => p.id === room.miniGame?.playerId) ??
+      activeTurnPlayer)
+    : null;
+  const isActiveMiniGameAi = Boolean(activeMiniGamePlayer?.isAi);
+  const activeActionCardPlayer: PlayerState | null = room?.actionCard
+    ? (activePlayers.find((p) => p.id === room.actionCard?.playerId) ??
+      activeTurnPlayer)
+    : null;
+  const isActiveActionCardAi = Boolean(activeActionCardPlayer?.isAi);
+
   // Reset in-flight draw guard whenever phase changes
   useEffect(() => {
     setDrawingInFlight(false);
   }, [room?.phase, room?.lastEventId]);
 
-  // Safety fallback if testing tablet solo without a live TV host connected
+  // Safety fallback if testing tablet solo without a live TV host connected (calm unhurried pacing)
   useEffect(() => {
     if (!room || room.hostConnected) return;
     if (room.phase === 'card-drawn' && room.currentCard) {
       const t = window.setTimeout(() => {
         void actions.resolveDrawnCard();
-      }, 2100);
+      }, 2900);
       return () => window.clearTimeout(t);
     }
     if (room.phase === 'moving' && room.movement) {
       const t = window.setTimeout(() => {
         void actions.advanceMoveComplete();
-      }, 1800);
+      }, 2800);
       return () => window.clearTimeout(t);
     }
     return undefined;
   }, [room, actions]);
+
+  // Solo-tablet AI turn fallback (ONLY active when !room.hostConnected so TV remains authoritative)
+  const soloAiDrawKey =
+    room &&
+    !room.hostConnected &&
+    room.phase === 'waiting-draw' &&
+    isActiveTurnAi
+      ? `${room.turnNumber}:${room.currentPlayerIndex}:${room.lastEventId ?? ''}`
+      : null;
+
+  useEffect(() => {
+    if (!soloAiDrawKey || lastSoloAiDrawKeyRef.current === soloAiDrawKey) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      lastSoloAiDrawKeyRef.current = soloAiDrawKey;
+      void actions.drawCard();
+    }, 2400);
+    return () => window.clearTimeout(timer);
+  }, [soloAiDrawKey, actions]);
+
+  const soloAiMiniGameId =
+    room &&
+    !room.hostConnected &&
+    room.phase === 'minigame' &&
+    isActiveMiniGameAi &&
+    room.miniGame
+      ? room.miniGame.id
+      : null;
+  const soloAiMiniGameTarget = room?.miniGame?.targetScore ?? 6;
+
+  useEffect(() => {
+    if (
+      !soloAiMiniGameId ||
+      completedSoloAiMiniGameIdRef.current === soloAiMiniGameId
+    ) {
+      return;
+    }
+
+    const target = Math.max(1, soloAiMiniGameTarget);
+    const willWin = Math.random() < 0.55;
+    const missDelta =
+      1 + Math.floor(Math.random() * Math.min(3, Math.max(1, target - 1)));
+    const finalScore = willWin ? target : Math.max(1, target - missDelta);
+
+    const timers: number[] = [];
+    const warmupMs = 1400;
+    const tickStepMs = 620;
+
+    timers.push(
+      window.setTimeout(() => {
+        actions.submitMiniGameScore(0, 0);
+      }, warmupMs)
+    );
+
+    const totalSteps = 6;
+    let prevScore = 0;
+    for (let step = 1; step <= totalSteps; step += 1) {
+      const nextScore =
+        step === totalSteps
+          ? finalScore
+          : Math.min(
+              finalScore,
+              Math.max(prevScore, Math.round((finalScore * step) / totalSteps))
+            );
+      prevScore = nextScore;
+      const tickScore = nextScore;
+      const tickProgress = Math.min(1, tickScore / target);
+      timers.push(
+        window.setTimeout(() => {
+          actions.submitMiniGameScore(tickScore, tickProgress);
+        }, warmupMs + step * tickStepMs)
+      );
+    }
+
+    timers.push(
+      window.setTimeout(() => {
+        completedSoloAiMiniGameIdRef.current = soloAiMiniGameId;
+        void actions.finishMiniGame(willWin, finalScore);
+      }, warmupMs + totalSteps * tickStepMs + 1300)
+    );
+
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [soloAiMiniGameId, soloAiMiniGameTarget, actions]);
+
+  const soloAiActionCardId =
+    room &&
+    !room.hostConnected &&
+    room.phase === 'action-card' &&
+    isActiveActionCardAi &&
+    room.actionCard
+      ? room.actionCard.id
+      : null;
+
+  useEffect(() => {
+    if (
+      !soloAiActionCardId ||
+      completedSoloAiActionIdRef.current === soloAiActionCardId
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      completedSoloAiActionIdRef.current = soloAiActionCardId;
+      const completed = Math.random() < 0.7;
+      void actions.completeActionCard(completed);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [soloAiActionCardId, actions]);
 
   // Native <dialog> cancel/close handlers whenever room dialog is mounted
   // (per modern-web-guidance `dialog` + `animate-to-from-top-layer`)
@@ -405,7 +535,7 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
     () => {
       void handleDrawCardTap();
     },
-    drawingInFlight || room?.phase !== 'waiting-draw'
+    drawingInFlight || room?.phase !== 'waiting-draw' || isActiveTurnAi
   );
 
   const playAgainTapProps = useToddlerTap(
@@ -857,8 +987,33 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
 
               {/* Center Interactive Zone */}
               <div className="tab-action-zone">
-                {/* WAITING FOR TAP TO DRAW CARD */}
-                {room.phase === 'waiting-draw' && (
+                {/* AI PLAYER SPECTATOR VIEW (Waiting to Draw) */}
+                {room.phase === 'waiting-draw' && isActiveTurnAi && (
+                  <div
+                    className="tab-ai-spectator-panel"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="tab-ai-badge-pill">
+                      <span aria-hidden="true">🧙‍♂️</span>
+                      <span>AI CANDY BUDDY</span>
+                    </div>
+                    <h2 className="tab-drawn-title">
+                      Watch the TV! 🧙‍♂️ {currentPlayer.name} is taking his turn!
+                    </h2>
+                    <div className="tab-watch-tv-pill">
+                      <Tv size={24} aria-hidden="true" />
+                      <span>
+                        {isStuck
+                          ? `${currentPlayer.name} is wiggling free from Licorice Lagoon!`
+                          : `${currentPlayer.name} is drawing a magical candy card...`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* WAITING FOR TAP TO DRAW CARD (Human Player) */}
+                {room.phase === 'waiting-draw' && !isActiveTurnAi && (
                   <button
                     type="button"
                     className={`tab-mega-draw-btn ${
@@ -916,15 +1071,49 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
                     <div className="tab-watch-tv-pill">
                       <Tv size={24} aria-hidden="true" />
                       <span>
-                        {room.movement?.shortcutUsed
-                          ? `Look at the TV! ${currentPlayer.name} is zooming across the shortcut!`
-                          : room.phase === 'moving'
-                            ? `Look at the TV! ${currentPlayer.name} is hopping!`
-                            : `Look at the TV! Showing ${currentPlayer.name}'s card!`}
+                        {isActiveTurnAi
+                          ? `Watch the TV! 🧙‍♂️ ${currentPlayer.name} is taking his turn!`
+                          : room.movement?.shortcutUsed
+                            ? `Look at the TV! ${currentPlayer.name} is zooming across the shortcut!`
+                            : room.phase === 'moving'
+                              ? `Look at the TV! ${currentPlayer.name} is hopping!`
+                              : `Look at the TV! Showing ${currentPlayer.name}'s card!`}
                       </span>
                     </div>
                   </div>
                 )}
+
+                {/* AI PLAYER SPECTATOR VIEW (Mini-Game Playing Live on TV) */}
+                {room.phase === 'minigame' &&
+                  room.miniGame &&
+                  isActiveMiniGameAi && (
+                    <div
+                      className="tab-ai-spectator-panel"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="tab-ai-badge-pill">
+                        <span aria-hidden="true">🧙‍♂️</span>
+                        <span>STAR MINI-GAME LIVE</span>
+                      </div>
+                      <h2 className="tab-drawn-title">
+                        Watch the TV! 🧙‍♂️ {room.miniGame.playerName} is playing{' '}
+                        {room.miniGame.title}!
+                      </h2>
+                      <div className="tab-ai-live-score">
+                        <span className="tab-ai-score-num">
+                          {room.miniGame.score}
+                        </span>
+                        <span className="tab-ai-score-goal">
+                          / {room.miniGame.targetScore} ⭐
+                        </span>
+                      </div>
+                      <div className="tab-watch-tv-pill">
+                        <Tv size={24} aria-hidden="true" />
+                        <span>Cheer for {room.miniGame.playerName} on the TV!</span>
+                      </div>
+                    </div>
+                  )}
 
                 {/* AI VIDEO CUTSCENE PLAYING ON TV */}
                 {room.phase === 'cutscene' && room.cutscene && (
@@ -988,9 +1177,9 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
       </main>
 
       {/* ================================================================= */}
-      {/* FULL-SCREEN INTERACTIVE TOUCH MINI-GAME HOST                      */}
+      {/* FULL-SCREEN INTERACTIVE TOUCH MINI-GAME HOST (Human Players Only) */}
       {/* ================================================================= */}
-      {room.phase === 'minigame' && room.miniGame && (
+      {room.phase === 'minigame' && room.miniGame && !isActiveMiniGameAi && (
         <MiniGameHost
           session={room.miniGame}
           onScoreChange={actions.submitMiniGameScore}
@@ -1002,13 +1191,18 @@ export const TabletControllerView: React.FC<TabletControllerViewProps> = ({
       )}
 
       {/* ================================================================= */}
-      {/* INTERACTIVE PARENT ACTION CARD OVERLAY                            */}
+      {/* ACTION CARD OVERLAY (Spectator mode for AI, Interactive for Human)*/}
       {/* ================================================================= */}
       {room.phase === 'action-card' && room.actionCard && (
         <ActionCardOverlay
           session={room.actionCard}
-          mode="tablet"
-          onResolve={(completed) => void actions.completeActionCard(completed)}
+          mode={isActiveActionCardAi ? 'tv' : 'tablet'}
+          isAiPlayer={isActiveActionCardAi}
+          onResolve={
+            isActiveActionCardAi
+              ? undefined
+              : (completed) => void actions.completeActionCard(completed)
+          }
         />
       )}
 

@@ -140,7 +140,8 @@ export function PopLollipopBubbles({
     const reportScoreThrottled = (newScore: number, force = false) => {
       const now = performance.now();
       const goal = Math.max(1, propsRef.current.targetScore);
-      const progress = Math.min(1, newScore / goal);
+      const clamped = Math.min(goal, Math.max(0, newScore));
+      const progress = Math.min(1, clamped / goal);
 
       if (force || now - sim.lastReportTime >= 100) {
         if (sim.pendingFlushTimer !== null) {
@@ -148,16 +149,17 @@ export function PopLollipopBubbles({
           sim.pendingFlushTimer = null;
         }
         sim.lastReportTime = now;
-        sim.lastReportedScore = newScore;
-        propsRef.current.onScoreChange(newScore, progress);
+        sim.lastReportedScore = clamped;
+        propsRef.current.onScoreChange(clamped, progress);
       } else if (sim.pendingFlushTimer === null) {
         const delay = Math.max(16, 100 - (now - sim.lastReportTime));
         sim.pendingFlushTimer = window.setTimeout(() => {
           sim.pendingFlushTimer = null;
           sim.lastReportTime = performance.now();
-          sim.lastReportedScore = sim.score;
           const g = Math.max(1, propsRef.current.targetScore);
-          propsRef.current.onScoreChange(sim.score, Math.min(1, sim.score / g));
+          const flushed = Math.min(g, Math.max(0, sim.score));
+          sim.lastReportedScore = flushed;
+          propsRef.current.onScoreChange(flushed, Math.min(1, flushed / g));
         }, delay);
       }
     };
@@ -192,12 +194,14 @@ export function PopLollipopBubbles({
     };
 
     const popBubbleAt = (index: number) => {
+      const goal = Math.max(1, propsRef.current.targetScore);
+      if (sim.score >= goal) return;
       const b = sim.bubbles[index];
       if (!b) return;
       sim.bubbles.splice(index, 1);
 
-      const pts = b.isRainbow ? 2 : 1;
-      sim.score += pts;
+      const pts = Math.min(b.isRainbow ? 2 : 1, goal - sim.score);
+      sim.score = Math.min(goal, sim.score + pts);
 
       sim.ripples.push({
         x: b.x,
@@ -233,12 +237,12 @@ export function PopLollipopBubbles({
         x: b.x,
         y: b.y - 10,
         life: 0,
-        text: b.isRainbow ? 'POP! +2 ⭐' : 'POP! +1',
+        text: pts > 1 ? `POP! +${pts} ⭐` : 'POP! +1',
         color: b.isRainbow ? '#d98a00' : b.swirlColor,
       });
 
       propsRef.current.onSfx?.(b.isRainbow ? 'star' : 'pop');
-      reportScoreThrottled(sim.score, sim.score === propsRef.current.targetScore);
+      reportScoreThrottled(sim.score, sim.score >= goal);
       setLiveAnnouncement(`Popped bubble! Score ${sim.score}`);
     };
 

@@ -15,7 +15,13 @@ export type CharacterId =
   | 'bapci'
   | 'papa'
   | 'nana'
-  | 'guest';
+  | 'mabel'
+  | 'gina'
+  | 'caroline'
+  | 'ian'
+  | 'emilia'
+  | 'guest'
+  | 'gnome';
 
 export type TileColor =
   | 'red'
@@ -111,6 +117,8 @@ export interface CharacterDefinition {
   name: string;
   role: string;
   isKid: boolean;
+  /** True when this character plays automatically as an AI buddy (e.g. Gnome). */
+  isAi?: boolean;
   color: string;
   accentColor: string;
   portraitUrl: string;
@@ -132,6 +140,8 @@ export interface PlayerState {
   id: CharacterId;
   name: string;
   isKid: boolean;
+  /** True when this player is controlled automatically by AI (stored as boolean, never undefined). */
+  isAi?: boolean;
   color: string;
   accentColor: string;
   portraitUrl: string;
@@ -235,6 +245,16 @@ export interface CelebrationEvent {
   timestamp: number;
 }
 
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: number;
+  playerId: CharacterId | null;
+  playerName: string | null;
+  playerColor: string | null;
+  emoji: string;
+  text: string;
+}
+
 export interface GameRoomState {
   roomCode: string;
   createdAt: number;
@@ -258,6 +278,7 @@ export interface GameRoomState {
   cutscene: CutsceneSession | null;
   winnerId: CharacterId | null;
   celebration: CelebrationEvent | null;
+  activityLog: ActivityLogEntry[];
   lastEventBanner: string | null;
   lastEventId: string | null;
   lastVoiceKey: string | null;

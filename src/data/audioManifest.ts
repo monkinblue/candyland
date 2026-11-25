@@ -7,7 +7,13 @@ export type AudioCharacterId =
   | 'bapci'
   | 'papa'
   | 'nana'
-  | 'guest';
+  | 'mabel'
+  | 'gina'
+  | 'caroline'
+  | 'ian'
+  | 'emilia'
+  | 'guest'
+  | 'gnome';
 
 export type CardColorId = 'red' | 'purple' | 'yellow' | 'blue' | 'orange' | 'green';
 
@@ -18,7 +24,7 @@ export interface VoiceClipMeta {
 }
 
 export const VOICE_MANIFEST = {
-  // Turn announcements (all 9 family characters)
+  // Turn announcements (all 15 characters including Kozlowskis & AI Gnome)
   turn_robert: {
     path: '/audio/voice/turn_robert.mp3',
     text: "It's Robert's turn! Tap to draw a sweet card!",
@@ -59,9 +65,39 @@ export const VOICE_MANIFEST = {
     text: "It's Nana's turn! Tap to draw a sweet card!",
     category: 'turn',
   },
+  turn_mabel: {
+    path: '/audio/voice/turn_mabel.mp3',
+    text: "Yay! It's Mabel's turn! Tap to draw a sweet card!",
+    category: 'turn',
+  },
+  turn_gina: {
+    path: '/audio/voice/turn_gina.mp3',
+    text: "It's Gina's turn! Tap to draw a sweet card!",
+    category: 'turn',
+  },
+  turn_caroline: {
+    path: '/audio/voice/turn_caroline.mp3',
+    text: "Yay! It's Caroline's turn! Tap to draw a sweet card!",
+    category: 'turn',
+  },
+  turn_ian: {
+    path: '/audio/voice/turn_ian.mp3',
+    text: "It's Ian's turn! Ready to draw a sweet card?",
+    category: 'turn',
+  },
+  turn_emilia: {
+    path: '/audio/voice/turn_emilia.mp3',
+    text: "Yay! It's Emilia's turn! Tap to draw a sweet card!",
+    category: 'turn',
+  },
   turn_guest: {
     path: '/audio/voice/turn_guest.mp3',
     text: "It's our Guest's turn! Tap to draw a sweet card!",
+    category: 'turn',
+  },
+  turn_gnome: {
+    path: '/audio/voice/turn_gnome.mp3',
+    text: "Ooh, it's Gnome's turn! Watch our magical candy buddy go!",
     category: 'turn',
   },
 
@@ -216,7 +252,7 @@ export const VOICE_MANIFEST = {
     category: 'event',
   },
 
-  // Victory announcements (generic + all 9 characters)
+  // Victory announcements (generic + all 15 characters)
   victory_generic: {
     path: '/audio/voice/victory_generic.mp3',
     text: 'Hooray! You reached Candy Castle and won the game!',
@@ -262,9 +298,39 @@ export const VOICE_MANIFEST = {
     text: 'Hooray! Nana reached Candy Castle and won the game!',
     category: 'victory',
   },
+  victory_mabel: {
+    path: '/audio/voice/victory_mabel.mp3',
+    text: 'Hooray! Mabel reached Candy Castle and won the game!',
+    category: 'victory',
+  },
+  victory_gina: {
+    path: '/audio/voice/victory_gina.mp3',
+    text: 'Hooray! Gina reached Candy Castle and won the game!',
+    category: 'victory',
+  },
+  victory_caroline: {
+    path: '/audio/voice/victory_caroline.mp3',
+    text: 'Hooray! Caroline reached Candy Castle and won the game!',
+    category: 'victory',
+  },
+  victory_ian: {
+    path: '/audio/voice/victory_ian.mp3',
+    text: 'Hooray! Ian reached Candy Castle and won the game!',
+    category: 'victory',
+  },
+  victory_emilia: {
+    path: '/audio/voice/victory_emilia.mp3',
+    text: 'Hooray! Emilia reached Candy Castle and won the game!',
+    category: 'victory',
+  },
   victory_guest: {
     path: '/audio/voice/victory_guest.mp3',
     text: 'Hooray! Our Guest reached Candy Castle and won the game!',
+    category: 'victory',
+  },
+  victory_gnome: {
+    path: '/audio/voice/victory_gnome.mp3',
+    text: 'Hooray! The magical Candyland Gnome reached Candy Castle and won the game!',
     category: 'victory',
   },
 } as const satisfies Record<string, VoiceClipMeta>;
@@ -286,7 +352,13 @@ const CHARACTER_SET = new Set<string>([
   'bapci',
   'papa',
   'nana',
+  'mabel',
+  'gina',
+  'caroline',
+  'ian',
+  'emilia',
   'guest',
+  'gnome',
 ]);
 
 export function getTurnVoiceKey(characterId: string): VoiceKey {

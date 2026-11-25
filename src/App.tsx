@@ -55,6 +55,7 @@ import { BoardView } from './components/BoardView';
 import { LandingScreen } from './components/LandingScreen';
 import { CharacterSelect } from './components/CharacterSelect';
 import { MiniGameHost } from './components/minigames/MiniGameHost';
+import { MiniGameTvOverlay } from './components/minigames/MiniGameTvOverlay';
 import { ActionCardOverlay } from './components/ActionCardOverlay';
 import { CelebrationEffects } from './components/CelebrationEffects';
 import { TvHostView } from './components/TvHostView';
@@ -130,6 +131,41 @@ function DrawnCardVisual({ card }: { card: Card }) {
   );
 }
 
+/**
+ * Waits for at least `minMs`, yields briefly so sibling effects can queue voice clips,
+ * waits for any active narrator voiceover to finish (capped at `maxVoiceWaitMs`),
+ * and pauses for a calm `postVoiceBreathMs` before proceeding.
+ */
+async function waitCalmly(
+  minMs: number,
+  postVoiceBreathMs: number,
+  isCancelled: () => boolean,
+  maxVoiceWaitMs = 5500
+): Promise<boolean> {
+  const minDelay =
+    minMs > 0
+      ? new Promise<void>((resolve) => {
+          window.setTimeout(resolve, minMs);
+        })
+      : Promise.resolve();
+
+  // Yield briefly so the sibling voice-trigger effect queues the voice clip first
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 60);
+  });
+  if (isCancelled()) return false;
+
+  await Promise.all([minDelay, soundEngine.waitForVoiceToFinish(maxVoiceWaitMs)]);
+  if (isCancelled()) return false;
+
+  if (postVoiceBreathMs > 0) {
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, postVoiceBreathMs);
+    });
+  }
+  return !isCancelled();
+}
+
 interface MirrorModeProps {
   onExit: () => void;
 }
@@ -201,14 +237,29 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     }
   }, [room.lastEventId, room.lastVoiceKey, room.phase, room.currentCard, room.cutscene]);
 
-  // Auto-transition from 'card-drawn' reveal popup -> movement / action card after ~1.4s
+  // Calm voice-aware transition from 'card-drawn' reveal popup -> movement / action card
+  const drawnCardType = room.currentCard?.type ?? null;
   useEffect(() => {
     if (room.phase !== 'card-drawn') return;
-    const timer = window.setTimeout(() => {
+    let cancelled = false;
+    const isSpecialCard =
+      drawnCardType === 'landmark' ||
+      drawnCardType === 'action' ||
+      drawnCardType === 'licorice';
+    void (async () => {
+      const ok = await waitCalmly(
+        isSpecialCard ? 2600 : 2200,
+        350,
+        () => cancelled,
+        5500
+      );
+      if (!ok) return;
       setRoom((prev) => applyResolveDrawnCard(prev, ENGINE_CONTEXT));
-    }, 1450);
-    return () => window.clearTimeout(timer);
-  }, [room.phase, room.lastEventId]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [room.phase, room.lastEventId, drawnCardType]);
 
   // Manage native Victory <dialog>
   useEffect(() => {
@@ -299,9 +350,126 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     }));
   }, []);
 
-  const canDraw = room.phase === 'waiting-draw';
+  const currentPlayer = room.players[room.currentPlayerIndex] ?? room.players[0];
+  const isAiTurn = Boolean(currentPlayer?.isAi);
+  const canDraw = room.phase === 'waiting-draw' && !isAiTurn;
   const drawTapProps = useToddlerTap(handleDrawCard, !canDraw);
   const playAgainTapProps = useToddlerTap(handlePlayAgain, room.phase !== 'victory');
+
+  const miniGamePlayer = room.miniGame
+    ? room.players.find((p) => p.id === room.miniGame?.playerId)
+    : null;
+  const isAiMiniGame = Boolean(miniGamePlayer?.isAi);
+
+  const actionCardPlayer = room.actionCard
+    ? room.players.find((p) => p.id === room.actionCard?.playerId)
+    : null;
+  const isAiActionCard = Boolean(actionCardPlayer?.isAi);
+
+  // Gnome AI auto-draw on waiting-draw (calm voice-aware turn intro)
+  useEffect(() => {
+    if (room.phase !== 'waiting-draw' || !isAiTurn) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await waitCalmly(1800, 500, () => cancelled, 5500);
+      if (!ok) return;
+      handleDrawCard();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    room.phase,
+    room.turnNumber,
+    room.currentPlayerIndex,
+    room.lastEventId,
+    isAiTurn,
+    handleDrawCard,
+  ]);
+
+  // Gnome AI automated mini-game simulation (calm warm-up, 620ms ticks, 1300ms celebration beat)
+  const activeMiniGameId = room.miniGame?.id ?? null;
+  const activeMiniGameTarget = room.miniGame?.targetScore ?? 6;
+  useEffect(() => {
+    if (room.phase !== 'minigame' || !activeMiniGameId || !isAiMiniGame) return;
+
+    const targetScore = Math.max(1, activeMiniGameTarget);
+    const willWin = Math.random() < 0.55;
+    const shortBy = Math.min(targetScore - 1, 1 + Math.floor(Math.random() * 3));
+    const finalScore = willWin ? targetScore : Math.max(1, targetScore - shortBy);
+
+    const totalTicks = 7;
+    let tick = 0;
+    let currentScore = 0;
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const timers: number[] = [];
+
+    void (async () => {
+      const ok = await waitCalmly(1400, 400, () => cancelled, 5500);
+      if (!ok) return;
+
+      intervalId = window.setInterval(() => {
+        if (cancelled) return;
+        tick += 1;
+        if (tick >= totalTicks) {
+          if (intervalId !== null) {
+            window.clearInterval(intervalId);
+            intervalId = null;
+          }
+          currentScore = finalScore;
+          handleMiniGameScore(finalScore, Math.min(1, finalScore / targetScore));
+          if (willWin) {
+            soundEngine.playVictoryFanfare();
+          } else {
+            soundEngine.playStarChime();
+          }
+          const doneTimer = window.setTimeout(() => {
+            if (!cancelled) {
+              handleMiniGameComplete(willWin, finalScore);
+            }
+          }, 1300);
+          timers.push(doneTimer);
+          return;
+        }
+
+        const ideal = Math.round((finalScore * tick) / totalTicks);
+        const jitter = Math.random() < 0.35 ? 1 : 0;
+        currentScore = Math.max(currentScore, Math.min(finalScore, ideal + jitter));
+        handleMiniGameScore(currentScore, Math.min(1, currentScore / targetScore));
+        soundEngine.playGumdropCatch();
+      }, 620);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [
+    room.phase,
+    activeMiniGameId,
+    activeMiniGameTarget,
+    isAiMiniGame,
+    handleMiniGameScore,
+    handleMiniGameComplete,
+  ]);
+
+  // Gnome AI automated action-card resolution (voice finish + 3800ms calm reading time)
+  const activeActionCardId = room.actionCard?.id ?? null;
+  useEffect(() => {
+    if (room.phase !== 'action-card' || !activeActionCardId || !isAiActionCard) return;
+    let cancelled = false;
+    const completed = Math.random() < 0.7;
+    void (async () => {
+      const ok = await waitCalmly(0, 3800, () => cancelled, 5000);
+      if (!ok) return;
+      handleActionCardResolve(completed);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [room.phase, activeActionCardId, isAiActionCard, handleActionCardResolve]);
 
   if (room.phase === 'lobby') {
     return (
@@ -318,7 +486,6 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
     );
   }
 
-  const currentPlayer = room.players[room.currentPlayerIndex] ?? room.players[0];
   const winner = room.winnerId
     ? room.players.find((p) => p.id === room.winnerId) ?? currentPlayer
     : null;
@@ -438,6 +605,7 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
           activePlayerId={currentPlayer?.id ?? null}
           movement={room.movement}
           cutscene={room.cutscene}
+          activityLog={room.activityLog}
           onHopStep={handleHopStep}
           onMovementComplete={handleMovementComplete}
           onCutsceneComplete={handleCutsceneComplete}
@@ -480,7 +648,9 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
             disabled={!canDraw}
             {...drawTapProps}
           >
-            {canDraw ? (
+            {isAiTurn ? (
+              <span>🧙‍♂️ {currentPlayer.name} is taking his turn! ✨</span>
+            ) : canDraw ? (
               isStuck ? (
                 <>
                   <Sparkles size={28} aria-hidden="true" />
@@ -503,22 +673,27 @@ const MirrorMode: React.FC<MirrorModeProps> = ({ onExit }) => {
         </footer>
       )}
 
-      {/* Touch Mini-Game Modal */}
-      {room.phase === 'minigame' && room.miniGame && (
-        <MiniGameHost
-          session={room.miniGame}
-          onScoreChange={handleMiniGameScore}
-          onComplete={handleMiniGameComplete}
-          modal
-        />
-      )}
+      {/* Touch Mini-Game Modal (or Automated AI Spectator Overlay for Gnome) */}
+      {room.phase === 'minigame' &&
+        room.miniGame &&
+        (isAiMiniGame ? (
+          <MiniGameTvOverlay session={room.miniGame} isAiPlayer />
+        ) : (
+          <MiniGameHost
+            session={room.miniGame}
+            onScoreChange={handleMiniGameScore}
+            onComplete={handleMiniGameComplete}
+            modal
+          />
+        ))}
 
-      {/* Interactive Silly Family Action Card Modal */}
+      {/* Interactive Silly Family Action Card Modal (or Spectator Overlay for Gnome) */}
       {room.phase === 'action-card' && room.actionCard && (
         <ActionCardOverlay
           session={room.actionCard}
-          mode="mirror"
-          onResolve={handleActionCardResolve}
+          mode={isAiActionCard ? 'tv' : 'mirror'}
+          isAiPlayer={isAiActionCard}
+          onResolve={isAiActionCard ? undefined : handleActionCardResolve}
         />
       )}
 

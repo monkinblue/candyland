@@ -59,6 +59,46 @@ export interface TvHostViewProps {
   onExit: () => void;
 }
 
+function delayMs(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Calm, voice-aware storybook pacing helper:
+ * Yields an initial 80ms tick so sibling voice effects queue their clip,
+ * waits for active narrator speech to finish plus a gentle breath, AND
+ * ensures at least `minMs` total elapsed time.
+ */
+async function waitCalmly(
+  minMs: number,
+  postVoiceBreathMs: number,
+  isCancelled: () => boolean,
+  maxVoiceWaitMs = 5500
+): Promise<boolean> {
+  const startedAt = performance.now();
+  await delayMs(80);
+  if (isCancelled()) return false;
+
+  await soundEngine.waitForVoiceToFinish(maxVoiceWaitMs);
+  if (isCancelled()) return false;
+
+  if (postVoiceBreathMs > 0) {
+    await delayMs(postVoiceBreathMs);
+    if (isCancelled()) return false;
+  }
+
+  const remainingMin = minMs - (performance.now() - startedAt);
+  if (remainingMin > 0) {
+    await delayMs(remainingMin);
+    if (isCancelled()) return false;
+  }
+
+  return !isCancelled();
+}
+
 /**
  * Probes whether the browser genuinely transitions `display` + `overlay` on top-layer exit
  * (per modern-web-guidance `animate-to-from-top-layer`).
@@ -334,6 +374,9 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
   const lastSpokenEventRef = useRef<string | null>(null);
   const lastCardRevealIdRef = useRef<string | null>(null);
   const lastCelebratedPhaseEventRef = useRef<string | null>(null);
+  const lastAiDrawKeyRef = useRef<string | null>(null);
+  const completedAiMiniGameIdRef = useRef<string | null>(null);
+  const completedAiActionIdRef = useRef<string | null>(null);
 
   // Configure audio engine for TV Host (BGM + Narrator Voiceovers + SFX)
   useEffect(() => {
@@ -494,19 +537,34 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     }
   }, [room]);
 
-  // Authoritative TV timing: auto-resolve drawn card after dramatic 1.65s reveal
+  // Authoritative TV timing: calm, voice-aware card reveal before resolving movement/overlays
+  const cardRevealKey =
+    room && room.phase === 'card-drawn' && room.currentCard
+      ? `${room.lastEventId ?? room.createdAt}:${room.currentCard.id}`
+      : null;
+  const cardRevealIsSpecial = Boolean(
+    room?.currentCard &&
+      (room.currentCard.type === 'landmark' ||
+        room.currentCard.type === 'action' ||
+        room.currentCard.type === 'licorice')
+  );
+
   useEffect(() => {
-    if (!room || room.phase !== 'card-drawn' || !room.currentCard) return;
-    const revealKey = `${room.lastEventId ?? room.updatedAt}:${room.currentCard.id}`;
-    if (lastCardRevealIdRef.current === revealKey) return;
+    if (!cardRevealKey || lastCardRevealIdRef.current === cardRevealKey) return;
+    let cancelled = false;
+    const minRevealMs = cardRevealIsSpecial ? 2600 : 2200;
 
-    const timer = window.setTimeout(() => {
-      lastCardRevealIdRef.current = revealKey;
+    void (async () => {
+      const ok = await waitCalmly(minRevealMs, 350, () => cancelled, 5500);
+      if (!ok || lastCardRevealIdRef.current === cardRevealKey) return;
+      lastCardRevealIdRef.current = cardRevealKey;
       void actions.resolveDrawnCard();
-    }, 1650);
+    })();
 
-    return () => window.clearTimeout(timer);
-  }, [room, actions]);
+    return () => {
+      cancelled = true;
+    };
+  }, [cardRevealKey, cardRevealIsSpecial, actions]);
 
   // Wire native <dialog> cancel/close handlers whenever dialogs are mounted
   // (per modern-web-guidance `dialog` + `animate-to-from-top-layer`)
@@ -628,19 +686,133 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
     toggleFullscreen();
   }, [toggleFullscreen]);
 
-  const tvHudDrawTapProps = useToddlerTap(
-    () => {
-      soundEngine.playButtonTap();
-      void actions.drawCard();
-    },
-    room?.phase !== 'waiting-draw'
-  );
-
   const players: readonly PlayerState[] = room?.players ?? [];
   const currentPlayer: PlayerState | null =
     players.length > 0
       ? (players[room?.currentPlayerIndex ?? 0] ?? players[0])
       : null;
+  const isCurrentPlayerAi = Boolean(currentPlayer?.isAi);
+  const miniGamePlayer: PlayerState | null = room?.miniGame
+    ? (players.find((p) => p.id === room.miniGame?.playerId) ?? currentPlayer)
+    : null;
+  const isMiniGameAi = Boolean(miniGamePlayer?.isAi);
+  const actionCardPlayer: PlayerState | null = room?.actionCard
+    ? (players.find((p) => p.id === room.actionCard?.playerId) ?? currentPlayer)
+    : null;
+  const isActionCardAi = Boolean(actionCardPlayer?.isAi);
+
+  const tvHudDrawTapProps = useToddlerTap(
+    () => {
+      soundEngine.playButtonTap();
+      void actions.drawCard();
+    },
+    room?.phase !== 'waiting-draw' || isCurrentPlayerAi
+  );
+
+  // Authoritative TV AI Turn Automation (e.g. Gnome AI Buddy) — calm, voice-aware pacing
+  // 1) Auto-draw card after min 1800ms AND narrator turn announcement finishes + 500ms breath
+  const aiDrawKey =
+    room && room.phase === 'waiting-draw' && isCurrentPlayerAi
+      ? `${room.turnNumber}:${room.currentPlayerIndex}:${room.lastEventId ?? ''}`
+      : null;
+
+  useEffect(() => {
+    if (!aiDrawKey || lastAiDrawKeyRef.current === aiDrawKey) return;
+    let cancelled = false;
+
+    void (async () => {
+      const ok = await waitCalmly(1800, 500, () => cancelled, 5500);
+      if (!ok || lastAiDrawKeyRef.current === aiDrawKey) return;
+      lastAiDrawKeyRef.current = aiDrawKey;
+      void actions.drawCard();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aiDrawKey, actions]);
+
+  // 2) Auto-simulate calm AI mini-game: wait for intro voice + warm-up, tick every 620ms, 1300ms finale breath
+  const aiMiniGameId =
+    room?.phase === 'minigame' && isMiniGameAi && room.miniGame
+      ? room.miniGame.id
+      : null;
+  const aiMiniGameTarget = room?.miniGame?.targetScore ?? 6;
+
+  useEffect(() => {
+    if (!aiMiniGameId || completedAiMiniGameIdRef.current === aiMiniGameId) {
+      return;
+    }
+
+    let cancelled = false;
+    const target = Math.max(1, aiMiniGameTarget);
+    const willWin = Math.random() < 0.55;
+    const missDelta =
+      1 + Math.floor(Math.random() * Math.min(3, Math.max(1, target - 1)));
+    const finalScore = willWin ? target : Math.max(1, target - missDelta);
+
+    void (async () => {
+      // Wait min 1400ms AND intro voiceover + 400ms warm-up breath before starting ticks
+      const readyOk = await waitCalmly(1400, 400, () => cancelled, 5500);
+      if (!readyOk) return;
+
+      // Flip MiniGameTvOverlay from 'ready' -> 'playing'
+      actions.submitMiniGameScore(0, 0);
+
+      const totalSteps = 6;
+      let prevScore = 0;
+      for (let step = 1; step <= totalSteps; step += 1) {
+        await delayMs(620);
+        if (cancelled) return;
+        const nextScore =
+          step === totalSteps
+            ? finalScore
+            : Math.min(
+                finalScore,
+                Math.max(prevScore, Math.round((finalScore * step) / totalSteps))
+              );
+        prevScore = nextScore;
+        actions.submitMiniGameScore(nextScore, Math.min(1, nextScore / target));
+      }
+
+      // Calm celebration beat after final tick so kids soak in the score & confetti
+      await delayMs(1300);
+      if (cancelled || completedAiMiniGameIdRef.current === aiMiniGameId) return;
+
+      completedAiMiniGameIdRef.current = aiMiniGameId;
+      void actions.finishMiniGame(willWin, finalScore);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aiMiniGameId, aiMiniGameTarget, actions]);
+
+  // 3) Auto-resolve Action Card after intro voice finishes + 3800ms calm reading time (~70% complete, ~30% skip)
+  const aiActionCardId =
+    room?.phase === 'action-card' && isActionCardAi && room.actionCard
+      ? room.actionCard.id
+      : null;
+
+  useEffect(() => {
+    if (!aiActionCardId || completedAiActionIdRef.current === aiActionCardId) {
+      return;
+    }
+    let cancelled = false;
+
+    void (async () => {
+      const ok = await waitCalmly(0, 3800, () => cancelled, 5000);
+      if (!ok || completedAiActionIdRef.current === aiActionCardId) return;
+      completedAiActionIdRef.current = aiActionCardId;
+      const completed = Math.random() < 0.7;
+      void actions.completeActionCard(completed);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aiActionCardId, actions]);
+
   const winner: PlayerState | null = room?.winnerId
     ? (players.find((p) => p.id === room.winnerId) ?? currentPlayer)
     : null;
@@ -721,6 +893,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
           }
           movement={room.movement}
           cutscene={room.cutscene}
+          activityLog={room.phase !== 'lobby' ? room.activityLog : undefined}
           onHopStep={handleHopStep}
           onMovementComplete={handleMovementComplete}
           onCutsceneComplete={handleCutsceneComplete}
@@ -1090,20 +1263,26 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
 
             {/* Compact TV Controls & Room Chip */}
             <div className="tv-hud-controls">
-              {room.phase === 'waiting-draw' && (
-                <button
-                  type="button"
-                  className="tv-hud-draw-btn"
-                  {...tvHudDrawTapProps}
-                >
-                  <Sparkles size={20} aria-hidden="true" />
-                  <span>
-                    {currentPlayer && currentPlayer.stuckTurns > 0
-                      ? 'Wiggle Free'
-                      : 'Draw Card'}
+              {room.phase === 'waiting-draw' &&
+                (isCurrentPlayerAi ? (
+                  <span className="tv-hud-ai-badge" role="status">
+                    <span aria-hidden="true">🧙‍♂️</span>
+                    <span>{currentPlayer?.name ?? 'Gnome'}&apos;s Turn</span>
                   </span>
-                </button>
-              )}
+                ) : (
+                  <button
+                    type="button"
+                    className="tv-hud-draw-btn"
+                    {...tvHudDrawTapProps}
+                  >
+                    <Sparkles size={20} aria-hidden="true" />
+                    <span>
+                      {currentPlayer && currentPlayer.stuckTurns > 0
+                        ? 'Wiggle Free'
+                        : 'Draw Card'}
+                    </span>
+                  </button>
+                ))}
 
               <button
                 type="button"
@@ -1235,7 +1414,7 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
           {/* =============================================================== */}
           {room.phase === 'minigame' && room.miniGame && (
             <>
-              {playMiniGameOnTv ? (
+              {playMiniGameOnTv && !isMiniGameAi ? (
                 <MiniGameHost
                   session={room.miniGame}
                   onScoreChange={actions.submitMiniGameScore}
@@ -1246,8 +1425,11 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
                 />
               ) : (
                 <>
-                  <MiniGameTvOverlay session={room.miniGame} />
-                  {!room.tabletConnected && (
+                  <MiniGameTvOverlay
+                    session={room.miniGame}
+                    isAiPlayer={isMiniGameAi}
+                  />
+                  {!room.tabletConnected && !isMiniGameAi && (
                     <div className="tv-fallback-bar">
                       <span>No Pixel Tablet connected?</span>
                       <button
@@ -1281,8 +1463,12 @@ export const TvHostView: React.FC<TvHostViewProps> = ({
           {/* =============================================================== */}
           {room.phase === 'action-card' && room.actionCard && (
             <>
-              <ActionCardOverlay session={room.actionCard} mode="tv" />
-              {!room.tabletConnected && (
+              <ActionCardOverlay
+                session={room.actionCard}
+                mode="tv"
+                isAiPlayer={isActionCardAi}
+              />
+              {!room.tabletConnected && !isActionCardAi && (
                 <div className="tv-fallback-bar">
                   <span>Confirm right from TV:</span>
                   <button

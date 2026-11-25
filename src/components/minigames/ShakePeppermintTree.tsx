@@ -147,7 +147,8 @@ export function ShakePeppermintTree({
     const reportScoreThrottled = (newScore: number, force = false) => {
       const now = performance.now();
       const goal = Math.max(1, propsRef.current.targetScore);
-      const progress = Math.min(1, newScore / goal);
+      const clamped = Math.min(goal, Math.max(0, newScore));
+      const progress = Math.min(1, clamped / goal);
 
       if (force || now - sim.lastReportTime >= 100) {
         if (sim.pendingFlushTimer !== null) {
@@ -155,22 +156,24 @@ export function ShakePeppermintTree({
           sim.pendingFlushTimer = null;
         }
         sim.lastReportTime = now;
-        sim.lastReportedScore = newScore;
-        propsRef.current.onScoreChange(newScore, progress);
+        sim.lastReportedScore = clamped;
+        propsRef.current.onScoreChange(clamped, progress);
       } else if (sim.pendingFlushTimer === null) {
         const delay = Math.max(16, 100 - (now - sim.lastReportTime));
         sim.pendingFlushTimer = window.setTimeout(() => {
           sim.pendingFlushTimer = null;
           sim.lastReportTime = performance.now();
-          sim.lastReportedScore = sim.score;
           const g = Math.max(1, propsRef.current.targetScore);
-          propsRef.current.onScoreChange(sim.score, Math.min(1, sim.score / g));
+          const flushed = Math.min(g, Math.max(0, sim.score));
+          sim.lastReportedScore = flushed;
+          propsRef.current.onScoreChange(flushed, Math.min(1, flushed / g));
         }, delay);
       }
     };
 
     const triggerShake = (tapX?: number, tapY?: number) => {
-      if (!propsRef.current.isPlaying) return;
+      const goal = Math.max(1, propsRef.current.targetScore);
+      if (!propsRef.current.isPlaying || sim.score >= goal) return;
       const now = performance.now();
       const minGap = propsRef.current.isKid ? 95 : 115;
       if (now - sim.lastShakeAt < minGap) return;
@@ -366,8 +369,12 @@ export function ShakePeppermintTree({
         // Land in bucket!
         if (m.y >= bucketY - 22) {
           sim.falling.splice(i, 1);
-          const pts = m.isGolden ? 2 : 1;
-          sim.score += pts;
+          const goal = Math.max(1, propsRef.current.targetScore);
+          if (!propsRef.current.isPlaying || sim.score >= goal) {
+            continue;
+          }
+          const pts = Math.min(m.isGolden ? 2 : 1, goal - sim.score);
+          sim.score = Math.min(goal, sim.score + pts);
           sim.caughtCount += 1;
           sim.bucketPulse = 1;
 
@@ -391,14 +398,14 @@ export function ShakePeppermintTree({
             x: bucketX + (Math.random() - 0.5) * 60,
             y: bucketY - 40,
             life: 0,
-            text: m.isGolden ? '+2 ⭐' : '+1!',
+            text: pts > 1 ? `+${pts} ⭐` : '+1!',
             color: m.isGolden ? '#d98a00' : '#ff3b5c',
           });
 
           if (m.isGolden) {
             propsRef.current.onSfx?.('star');
           }
-          reportScoreThrottled(sim.score, sim.score === propsRef.current.targetScore);
+          reportScoreThrottled(sim.score, sim.score >= goal);
           setLiveAnnouncement(`Peppermint caught! Score ${sim.score}`);
         }
       }

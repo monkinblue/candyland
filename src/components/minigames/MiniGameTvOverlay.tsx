@@ -5,6 +5,8 @@ import './MiniGameTvOverlay.css';
 
 export interface MiniGameTvOverlayProps {
   session: MiniGameSession;
+  /** True when the active player is an AI character (e.g., Candyland Gnome) */
+  isAiPlayer?: boolean;
 }
 
 const TV_GAME_BADGE: Record<MiniGameType, { emoji: string; verb: string }> = {
@@ -17,18 +19,19 @@ const TV_GAME_BADGE: Record<MiniGameType, { emoji: string; verb: string }> = {
 const RING_RADIUS = 64;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
+export function MiniGameTvOverlay({ session, isAiPlayer = false }: MiniGameTvOverlayProps) {
   const durationSec = Math.max(3, session.durationSeconds || 10);
   const targetScore = Math.max(1, session.targetScore || (session.isKid ? 6 : 10));
-  const progress = Math.max(0, Math.min(1, session.progress || session.score / targetScore));
-  const hasReachedGoal = session.won === true || session.score >= targetScore;
+  const displayedScore = Math.min(targetScore, Math.max(0, session.score));
+  const progress = Math.max(0, Math.min(1, session.progress || displayedScore / targetScore));
+  const hasReachedGoal = session.won === true || displayedScore >= targetScore;
 
   const [secondsRemaining, setSecondsRemaining] = useState<number>(durationSec);
   const [scoreBumpKey, setScoreBumpKey] = useState<number>(0);
   const [portraitFailed, setPortraitFailed] = useState<boolean>(false);
 
   const playStartedAtRef = useRef<number | null>(null);
-  const prevScoreRef = useRef<number>(session.score);
+  const prevScoreRef = useRef<number>(displayedScore);
   const celebratedGoalRef = useRef<boolean>(false);
 
   // Reset per mini-game session
@@ -42,11 +45,11 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
 
   // Animate bouncy score counter every time live score increments
   useEffect(() => {
-    if (session.score !== prevScoreRef.current) {
-      prevScoreRef.current = session.score;
+    if (displayedScore !== prevScoreRef.current) {
+      prevScoreRef.current = displayedScore;
       setScoreBumpKey((k) => k + 1);
     }
-  }, [session.score]);
+  }, [displayedScore]);
 
   // Trigger celebratory star confetti on TV the moment player crosses target goal!
   useEffect(() => {
@@ -58,7 +61,12 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
   }, [hasReachedGoal]);
 
   // Live SVG countdown ring synchronized when tablet flips status to 'playing'
+  // Freezes immediately at the winning finish time the instant hasReachedGoal becomes true!
   useEffect(() => {
+    if (hasReachedGoal) {
+      return undefined;
+    }
+
     if (session.status === 'ready') {
       setSecondsRemaining(durationSec);
       playStartedAtRef.current = null;
@@ -87,13 +95,13 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
 
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
-  }, [session.status, durationSec]);
+  }, [session.status, durationSec, hasReachedGoal]);
 
   const badge = TV_GAME_BADGE[session.type];
   const timeFraction = Math.max(0, Math.min(1, secondsRemaining / durationSec));
   const strokeDashoffset = RING_CIRCUMFERENCE * (1 - timeFraction);
   const displaySec = Math.ceil(secondsRemaining);
-  const isUrgent = session.status === 'playing' && displaySec <= 3 && displaySec > 0;
+  const isUrgent = !hasReachedGoal && session.status === 'playing' && displaySec <= 3 && displaySec > 0;
 
   return (
     <aside
@@ -146,7 +154,7 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
           <div className="mgtv-score-col" aria-live="polite">
             <span className="mgtv-score-label">LIVE SCORE</span>
             <div key={scoreBumpKey} className="mgtv-score-value">
-              {session.score}
+              {displayedScore}
             </div>
             <div className="mgtv-goal-pill">
               Goal: <strong>{targetScore}</strong> ⭐
@@ -213,9 +221,13 @@ export function MiniGameTvOverlay({ session }: MiniGameTvOverlayProps) {
           </div>
         ) : (
           <p className="mgtv-cheer-footer">
-            {session.status === 'ready'
-              ? `Pass the tablet to ${session.playerName} and tap "I'M READY!" to start!`
-              : `Cheer for ${session.playerName}! Reach ${targetScore} stars for +${session.bonusSpacesOnWin} bonus spaces!`}
+            {isAiPlayer
+              ? session.status === 'ready'
+                ? `🧙‍♂️ ${session.playerName} is warming up for the challenge!`
+                : `🧙‍♂️ Watch ${session.playerName} go! Reach ${targetScore} stars for +${session.bonusSpacesOnWin} bonus spaces!`
+              : session.status === 'ready'
+                ? `Pass the tablet to ${session.playerName} and tap "I'M READY!" to start!`
+                : `Cheer for ${session.playerName}! Reach ${targetScore} stars for +${session.bonusSpacesOnWin} bonus spaces!`}
           </p>
         )}
       </div>

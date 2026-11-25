@@ -203,7 +203,8 @@ export function TraceCandyCane({
     const reportScoreThrottled = (newScore: number, force = false) => {
       const now = performance.now();
       const goal = Math.max(1, propsRef.current.targetScore);
-      const progress = Math.min(1, newScore / goal);
+      const clamped = Math.min(goal, Math.max(0, newScore));
+      const progress = Math.min(1, clamped / goal);
 
       if (force || now - sim.lastReportTime >= 100) {
         if (sim.pendingFlushTimer !== null) {
@@ -211,16 +212,17 @@ export function TraceCandyCane({
           sim.pendingFlushTimer = null;
         }
         sim.lastReportTime = now;
-        sim.lastReportedScore = newScore;
-        propsRef.current.onScoreChange(newScore, progress);
+        sim.lastReportedScore = clamped;
+        propsRef.current.onScoreChange(clamped, progress);
       } else if (sim.pendingFlushTimer === null) {
         const delay = Math.max(16, 100 - (now - sim.lastReportTime));
         sim.pendingFlushTimer = window.setTimeout(() => {
           sim.pendingFlushTimer = null;
           sim.lastReportTime = performance.now();
-          sim.lastReportedScore = sim.score;
           const g = Math.max(1, propsRef.current.targetScore);
-          propsRef.current.onScoreChange(sim.score, Math.min(1, sim.score / g));
+          const flushed = Math.min(g, Math.max(0, sim.score));
+          sim.lastReportedScore = flushed;
+          propsRef.current.onScoreChange(flushed, Math.min(1, flushed / g));
         }, delay);
       }
     };
@@ -260,24 +262,37 @@ export function TraceCandyCane({
 
     const checkCaneComplete = () => {
       if (!sim.nodes.every((n) => n.lit)) return;
-      // Bonus point for finishing the full candy cane!
-      sim.score += 1;
-      propsRef.current.onSfx?.('star');
-      reportScoreThrottled(sim.score, true);
-      sim.bannerText = sim.isGoldenCane ? '✨ GOLDEN CANE COMPLETE! +1 ✨' : '🌟 GOLDEN BONUS CANE! 🌟';
-      sim.bannerTimer = 1.1;
+      const goal = Math.max(1, propsRef.current.targetScore);
 
       for (const n of sim.nodes) {
         const p = getNodePixel(n);
         spawnSparkles(p.x, p.y, true, 8);
       }
 
+      if (sim.score >= goal) {
+        return;
+      }
+
+      // Bonus point for finishing the full candy cane (clamped to targetScore)
+      sim.score = Math.min(goal, sim.score + 1);
+      propsRef.current.onSfx?.('star');
+      reportScoreThrottled(sim.score, true);
+
+      if (sim.score >= goal) {
+        return;
+      }
+
+      sim.bannerText = sim.isGoldenCane ? '✨ GOLDEN CANE COMPLETE! +1 ✨' : '🌟 GOLDEN BONUS CANE! 🌟';
+      sim.bannerTimer = 1.1;
+
       if (sim.respawnTimer !== null) {
         window.clearTimeout(sim.respawnTimer);
       }
       sim.respawnTimer = window.setTimeout(() => {
         sim.respawnTimer = null;
-        if (!propsRef.current.isPlaying) return;
+        if (!propsRef.current.isPlaying || sim.score >= Math.max(1, propsRef.current.targetScore)) {
+          return;
+        }
         sim.isGoldenCane = true;
         sim.caneNumber += 1;
         setCaneLevel(sim.caneNumber);
@@ -289,14 +304,15 @@ export function TraceCandyCane({
     };
 
     const lightNode = (node: TraceNode) => {
-      if (node.lit) return;
+      const goal = Math.max(1, propsRef.current.targetScore);
+      if (node.lit || sim.score >= goal) return;
       node.lit = true;
       node.popAnim = 1;
       const p = getNodePixel(node);
       spawnSparkles(p.x, p.y, sim.isGoldenCane, 12);
-      sim.score += 1;
+      sim.score = Math.min(goal, sim.score + 1);
       propsRef.current.onSfx?.('sparkle');
-      reportScoreThrottled(sim.score, sim.score === propsRef.current.targetScore);
+      reportScoreThrottled(sim.score, sim.score >= goal);
       setLiveAnnouncement(`Lit candy cane dot! Score ${sim.score}`);
       checkCaneComplete();
     };

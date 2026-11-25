@@ -6,7 +6,7 @@
  * Usage:
  *   node scripts/generate-audio.mjs --check          # Verify API key, quota, and pick storyteller voice
  *   node scripts/generate-audio.mjs --test           # Generate 1-clip test (turn_wyatt.mp3)
- *   node scripts/generate-audio.mjs                  # Generate all 48 missing voiceover clips
+ *   node scripts/generate-audio.mjs                  # Generate all 60 missing voiceover clips
  *   node scripts/generate-audio.mjs --force          # Regenerate all clips even if they already exist
  *   node scripts/generate-audio.mjs --voice <id>     # Pin a specific ElevenLabs voice ID
  */
@@ -23,7 +23,7 @@ const VOICE_OUT_DIR = path.join(ROOT_DIR, 'public', 'audio', 'voice');
 
 // Voiceover lines (ttsText uses phonetic "Bopchee" for warm pronunciation of "Bapci")
 const VOICE_CLIPS = [
-  // Priority 1: Turn announcements (all 9 family characters)
+  // Priority 1: Turn announcements (all 15 characters including Kozlowskis & AI Gnome)
   { key: 'turn_wyatt', ttsText: "Yay! It's Wyatt's turn! Tap to draw a sweet card!" },
   { key: 'turn_emma', ttsText: "Yay! It's Emma's turn! Tap to draw a sweet card!" },
   { key: 'turn_robert', ttsText: "It's Robert's turn! Tap to draw a sweet card!" },
@@ -32,7 +32,13 @@ const VOICE_CLIPS = [
   { key: 'turn_bapci', ttsText: "It's Bopchee's turn! Tap to draw a sweet card!" },
   { key: 'turn_papa', ttsText: "It's Papa's turn! Ready to draw a sweet card?" },
   { key: 'turn_nana', ttsText: "It's Nana's turn! Tap to draw a sweet card!" },
+  { key: 'turn_mabel', ttsText: "Yay! It's Mabel's turn! Tap to draw a sweet card!" },
+  { key: 'turn_gina', ttsText: "It's Gina's turn! Tap to draw a sweet card!" },
+  { key: 'turn_caroline', ttsText: "Yay! It's Caroline's turn! Tap to draw a sweet card!" },
+  { key: 'turn_ian', ttsText: "It's Ian's turn! Ready to draw a sweet card?" },
+  { key: 'turn_emilia', ttsText: "Yay! It's Emilia's turn! Tap to draw a sweet card!" },
   { key: 'turn_guest', ttsText: "It's our Guest's turn! Tap to draw a sweet card!" },
+  { key: 'turn_gnome', ttsText: "Ooh, it's Gnome's turn! Watch our magical candy buddy go!" },
 
   // Priority 2: Game events
   { key: 'event_welcome', ttsText: 'Welcome to Family Candyland! Let the sweet adventure begin!' },
@@ -45,7 +51,7 @@ const VOICE_CLIPS = [
   { key: 'event_minigame_try', ttsText: "Awesome try! Here's a sweet bonus hop!" },
   { key: 'event_action_complete', ttsText: 'Woohoo! Amazing job! Take your bonus hops!' },
 
-  // Priority 3: Victory announcements (generic + all 9 characters)
+  // Priority 3: Victory announcements (generic + all 15 characters)
   { key: 'victory_generic', ttsText: 'Hooray! You reached Candy Castle and won the game!' },
   { key: 'victory_wyatt', ttsText: 'Hooray! Wyatt reached Candy Castle and won the game!' },
   { key: 'victory_emma', ttsText: 'Hooray! Emma reached Candy Castle and won the game!' },
@@ -55,7 +61,13 @@ const VOICE_CLIPS = [
   { key: 'victory_bapci', ttsText: 'Hooray! Bopchee reached Candy Castle and won the game!' },
   { key: 'victory_papa', ttsText: 'Hooray! Papa reached Candy Castle and won the game!' },
   { key: 'victory_nana', ttsText: 'Hooray! Nana reached Candy Castle and won the game!' },
+  { key: 'victory_mabel', ttsText: 'Hooray! Mabel reached Candy Castle and won the game!' },
+  { key: 'victory_gina', ttsText: 'Hooray! Gina reached Candy Castle and won the game!' },
+  { key: 'victory_caroline', ttsText: 'Hooray! Caroline reached Candy Castle and won the game!' },
+  { key: 'victory_ian', ttsText: 'Hooray! Ian reached Candy Castle and won the game!' },
+  { key: 'victory_emilia', ttsText: 'Hooray! Emilia reached Candy Castle and won the game!' },
   { key: 'victory_guest', ttsText: 'Hooray! Our Guest reached Candy Castle and won the game!' },
+  { key: 'victory_gnome', ttsText: 'Hooray! The magical Candyland Gnome reached Candy Castle and won the game!' },
 
   // Priority 4: Color cards (single & double)
   { key: 'card_red', ttsText: 'One cherry red!' },

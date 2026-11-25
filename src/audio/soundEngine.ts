@@ -156,6 +156,7 @@ class CandylandSoundEngine {
   private activeVoiceSource: AudioBufferSourceNode | null = null;
   private activeHtmlAudio: HTMLAudioElement | null = null;
   private activeVoiceCancel: (() => void) | null = null;
+  private voiceIdleWaiters = new Set<() => void>();
 
   private listeners = new Set<AudioStateListener>();
   private gestureListenersBound = false;
@@ -730,6 +731,45 @@ class CandylandSoundEngine {
     }
   }
 
+  private flushVoiceIdleWaiters(): void {
+    if (this.voiceIdleWaiters.size === 0) return;
+    const waiters = Array.from(this.voiceIdleWaiters);
+    this.voiceIdleWaiters.clear();
+    for (const wake of waiters) {
+      wake();
+    }
+  }
+
+  public waitForVoiceToFinish(maxWaitMs = 6000): Promise<void> {
+    if (
+      maxWaitMs <= 0 ||
+      this.muted ||
+      !this.allowsBgmAndVoice() ||
+      (!this.speaking && !this.processingVoiceQueue && this.voiceQueue.length === 0)
+    ) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      let timerId: ReturnType<typeof setTimeout> | null = null;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (timerId !== null) {
+          clearTimeout(timerId);
+          timerId = null;
+        }
+        this.voiceIdleWaiters.delete(finish);
+        resolve();
+      };
+
+      this.voiceIdleWaiters.add(finish);
+      timerId = setTimeout(finish, maxWaitMs);
+    });
+  }
+
   public stopVoice(): void {
     this.voiceGeneration += 1;
     this.processingVoiceQueue = false;
@@ -750,6 +790,8 @@ class CandylandSoundEngine {
       this.updateGainTargets(false);
       this.emitState();
     }
+
+    this.flushVoiceIdleWaiters();
   }
 
   private async drainVoiceQueue(runGen: number): Promise<void> {
@@ -789,6 +831,7 @@ class CandylandSoundEngine {
           this.updateGainTargets(false);
           this.emitState();
         }
+        this.flushVoiceIdleWaiters();
       }
     }
   }

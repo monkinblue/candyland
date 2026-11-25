@@ -161,14 +161,14 @@ export function MiniGameHost({
       setCountdownLabel('GO!');
       setHostPhase('go');
       soundEngine.playStarChime();
-    }, 450);
+    }, 650);
 
     const tPlay = window.setTimeout(() => {
       hostPhaseRef.current = 'playing';
       setHostPhase('playing');
       // Immediately flip remote TV session status to 'playing' so both 10s timers start together
       onScoreChangeRef.current(0, 0);
-    }, 950);
+    }, 1300);
 
     countdownTimersRef.current = [tGo, tPlay];
   }, [clearCountdownTimers]);
@@ -199,7 +199,7 @@ export function MiniGameHost({
   const finishNow = useCallback(() => {
     if (completedRef.current) return;
     completedRef.current = true;
-    const finalScore = scoreRef.current;
+    const finalScore = Math.min(targetScore, Math.max(0, scoreRef.current));
     const won = finalScore >= targetScore;
     onCompleteRef.current(won, finalScore);
   }, [targetScore]);
@@ -207,15 +207,15 @@ export function MiniGameHost({
   const readyTapProps = useToddlerTap(handleConfirmReady, hostPhase !== 'confirm');
   const continueTapProps = useToddlerTap(finishNow, hostPhase !== 'result');
 
-  // Result banner celebration + auto-advance after ~2.4s
+  // Result banner celebration + relaxed auto-advance after 3.4s (still tappable anytime)
   useEffect(() => {
     if (hostPhase !== 'result') return;
 
-    const finalScore = scoreRef.current;
+    const finalScore = Math.min(targetScore, Math.max(0, scoreRef.current));
     const won = finalScore >= targetScore;
     const finalProgress = Math.min(1, finalScore / targetScore);
 
-    // Flush final score to TV
+    // Flush final clamped score to TV
     onScoreChangeRef.current(finalScore, finalProgress);
 
     let cleanupConfetti: (() => void) | undefined;
@@ -230,7 +230,7 @@ export function MiniGameHost({
 
     const doneTimer = window.setTimeout(() => {
       finishNow();
-    }, 2400);
+    }, 3400);
 
     return () => {
       window.clearTimeout(doneTimer);
@@ -240,22 +240,31 @@ export function MiniGameHost({
 
   const handleGameScoreChange = useCallback(
     (nextScore: number, progress: number) => {
-      // Never forward score/status updates before active gameplay starts (confirm / ready / go)
-      if (
-        hostPhaseRef.current === 'confirm' ||
-        hostPhaseRef.current === 'ready' ||
-        hostPhaseRef.current === 'go'
-      ) {
+      // Only accept score updates during active gameplay (ignore confirm/ready/go and post-win result)
+      if (hostPhaseRef.current !== 'playing') {
         return;
       }
 
-      scoreRef.current = nextScore;
-      setScore(nextScore);
+      const clampedScore = Math.min(targetScore, Math.max(0, nextScore));
+
+      // Instant win: stop the clock and celebrate the moment targetScore is reached!
+      if (clampedScore >= targetScore) {
+        scoreRef.current = targetScore;
+        setScore(targetScore);
+        lastSyncRef.current = performance.now();
+        hostPhaseRef.current = 'result';
+        onScoreChangeRef.current(targetScore, 1);
+        setHostPhase('result');
+        return;
+      }
+
+      scoreRef.current = clampedScore;
+      setScore(clampedScore);
 
       const now = performance.now();
-      if (now - lastSyncRef.current >= 95 || nextScore >= targetScore) {
+      if (now - lastSyncRef.current >= 95) {
         lastSyncRef.current = now;
-        onScoreChangeRef.current(nextScore, Math.max(0, Math.min(1, progress)));
+        onScoreChangeRef.current(clampedScore, Math.max(0, Math.min(1, progress)));
       }
     },
     [targetScore],

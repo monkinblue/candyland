@@ -197,11 +197,15 @@
     )
     translate(-50%, -50%);
   will-change: transform;
-  transition: transform 0.29s cubic-bezier(0.34, 1.4, 0.64, 1);
+  transition: transform 0.38s cubic-bezier(0.34, 1.32, 0.64, 1);
 }
 
 .board-token.is-gliding {
   transition: none;
+}
+
+.board-token.is-landmark-gliding {
+  transition: transform 0.92s cubic-bezier(0.25, 0.85, 0.35, 1);
 }
 
 .board-token-inner {
@@ -214,11 +218,30 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .board-token-inner.is-hopping {
-    animation: candyTokenHop 0.3s cubic-bezier(0.28, 0.84, 0.42, 1);
+    animation: candyTokenHop 0.38s cubic-bezier(0.28, 0.84, 0.42, 1);
   }
 
   .board-token.is-gliding .board-token-inner {
-    animation: shortcutZoomBounce 0.4s ease-in-out infinite alternate;
+    animation: shortcutZoomBounce 0.48s ease-in-out infinite alternate;
+  }
+
+  .board-token.is-landmark-gliding .board-token-inner {
+    animation: landmarkSwoopArc 0.92s cubic-bezier(0.28, 0.84, 0.42, 1);
+  }
+}
+
+@keyframes landmarkSwoopArc {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    transform: translateY(-58%) scale(1.18);
+  }
+  85% {
+    transform: translateY(3%) scale(1.12, 0.88);
+  }
+  100% {
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -336,6 +359,106 @@
   place-items: center;
   font-size: clamp(0.65rem, 1.2cqw, 1rem);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* ==========================================================================
+   Rolling 5-Line Activity Log (Open Sky to the Right of Candy Castle)
+   Positioned cleanly at left: 63.5%, top: 6.8%, width: 20.0% — right of
+   Candy Castle, left of Ice Palace, below top HUD (~6.2%), strictly above
+   Tile #52's tan border (~18.2%) across 1080p TV and 1280x800 Mirror Mode.
+   ========================================================================== */
+
+.board-activity-log {
+  position: absolute;
+  left: 63.5%;
+  top: 6.8%;
+  width: 20.0%;
+  z-index: 22;
+  pointer-events: none;
+  padding: clamp(2px, 0.32cqh, 5px) clamp(5px, 0.55cqw, 9px);
+  border-radius: clamp(7px, 0.78cqw, 14px);
+  background: rgba(255, 252, 255, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: clamp(1.5px, 0.14cqw, 2.5px) solid rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 6px 18px rgba(59, 28, 50, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.board-activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1px, 0.12cqh, 2px);
+}
+
+.board-activity-item {
+  display: flex;
+  align-items: center;
+  gap: clamp(3px, 0.28cqw, 5px);
+  padding: clamp(1px, 0.1cqh, 2px) clamp(3px, 0.3cqw, 5px);
+  border-radius: clamp(4px, 0.4cqw, 7px);
+  font-family: var(--font-body);
+  font-size: clamp(7px, 0.7cqw, 13px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: #4a2442;
+  opacity: 0.78;
+  min-width: 0;
+}
+
+.board-activity-item:nth-last-child(2) {
+  opacity: 0.9;
+}
+
+.board-activity-item.is-latest {
+  opacity: 1;
+  font-weight: 800;
+  color: #2b1038;
+  background: rgba(255, 212, 59, 0.28);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .board-activity-item.is-latest {
+    animation: activityLogSlideIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes activityLogSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.board-activity-dot {
+  width: clamp(5px, 0.42cqw, 8px);
+  height: clamp(5px, 0.42cqw, 8px);
+  border-radius: 50%;
+  background: var(--entry-color, #9b51e0);
+  border: 1px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.board-activity-emoji {
+  font-size: clamp(7px, 0.68cqw, 12px);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.board-activity-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==========================================================================

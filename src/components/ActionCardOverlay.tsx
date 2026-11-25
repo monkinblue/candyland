@@ -10,12 +10,15 @@ export interface ActionCardOverlayProps {
   mode: 'tv' | 'tablet' | 'mirror';
   /** Called when parent/player confirms completion (true) or skips (false). */
   onResolve?: (completed: boolean) => void;
+  /** True when the active player is an AI character (forces clean spectator mode) */
+  isAiPlayer?: boolean;
 }
 
 export function ActionCardOverlay({
   session,
   mode,
   onResolve,
+  isAiPlayer = false,
 }: ActionCardOverlayProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
@@ -26,7 +29,7 @@ export function ActionCardOverlay({
   const [portraitFailed, setPortraitFailed] = useState(false);
   const [completing, setCompleting] = useState(false);
 
-  const isInteractive = mode === 'tablet' || mode === 'mirror';
+  const isInteractive = !isAiPlayer && (mode === 'tablet' || mode === 'mirror');
   const { card } = session;
   const bonusSpaces = Math.max(1, card.bonusSpaces || 1);
 
@@ -181,7 +184,11 @@ export function ActionCardOverlay({
       ) : (
         <div className="ac-tv-footer" role="status">
           <span className="ac-tv-pulse-dot" aria-hidden="true" />
-          <span>Tap COMPLETE on the Tablet when {session.playerName} finishes!</span>
+          <span>
+            {isAiPlayer
+              ? `🧙‍♂️ ${session.playerName} is giving this challenge a magical try!`
+              : `Tap COMPLETE on the Tablet when ${session.playerName} finishes!`}
+          </span>
         </div>
       )}
     </div>

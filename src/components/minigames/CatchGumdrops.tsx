@@ -157,7 +157,8 @@ export function CatchGumdrops({
     const reportScoreThrottled = (newScore: number, force = false) => {
       const now = performance.now();
       const goal = Math.max(1, propsRef.current.targetScore);
-      const progress = Math.min(1, newScore / goal);
+      const clamped = Math.min(goal, Math.max(0, newScore));
+      const progress = Math.min(1, clamped / goal);
 
       if (force || now - sim.lastReportTime >= 100) {
         if (sim.pendingFlushTimer !== null) {
@@ -165,16 +166,17 @@ export function CatchGumdrops({
           sim.pendingFlushTimer = null;
         }
         sim.lastReportTime = now;
-        sim.lastReportedScore = newScore;
-        propsRef.current.onScoreChange(newScore, progress);
+        sim.lastReportedScore = clamped;
+        propsRef.current.onScoreChange(clamped, progress);
       } else if (sim.pendingFlushTimer === null) {
         const delay = Math.max(16, 100 - (now - sim.lastReportTime));
         sim.pendingFlushTimer = window.setTimeout(() => {
           sim.pendingFlushTimer = null;
           sim.lastReportTime = performance.now();
-          sim.lastReportedScore = sim.score;
           const g = Math.max(1, propsRef.current.targetScore);
-          propsRef.current.onScoreChange(sim.score, Math.min(1, sim.score / g));
+          const flushed = Math.min(g, Math.max(0, sim.score));
+          sim.lastReportedScore = flushed;
+          propsRef.current.onScoreChange(flushed, Math.min(1, flushed / g));
         }, delay);
       }
     };
@@ -206,12 +208,14 @@ export function CatchGumdrops({
     };
 
     const awardCatch = (g: Gumdrop) => {
-      const pts = g.isGolden ? 2 : 1;
-      sim.score += pts;
+      const goal = Math.max(1, propsRef.current.targetScore);
+      if (sim.score >= goal) return;
+      const pts = Math.min(g.isGolden ? 2 : 1, goal - sim.score);
+      sim.score = Math.min(goal, sim.score + pts);
       sim.basketSquash = 1;
       emitCatchBurst(g.x, g.y, g.color, pts);
       propsRef.current.onSfx?.(g.isGolden ? 'star' : 'catch');
-      reportScoreThrottled(sim.score, sim.score === propsRef.current.targetScore);
+      reportScoreThrottled(sim.score, sim.score >= goal);
       setLiveAnnouncement(`Caught gumdrop! Score ${sim.score}`);
     };
 

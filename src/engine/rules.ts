@@ -1,6 +1,7 @@
 import {
   ActionCardItem,
   ActionCardSession,
+  ActivityLogEntry,
   BoardShortcut,
   BoardTile,
   Card,
@@ -18,6 +19,7 @@ import {
   MiniGameSession,
   MovementState,
   PlayerState,
+  TileColor,
   TurnPhase,
 } from '../types/game';
 import { createDeck, drawFromDeck, getVoiceKeyForCard } from './deck';
@@ -55,11 +57,96 @@ function nextId(prefix: string): string {
   return `${prefix}-${Date.now()}-${eventCounter}`;
 }
 
+const MAX_ACTIVITY_LOG_ENTRIES = 8;
+
+const COLOR_SQUARE_EMOJI: Record<TileColor, string> = {
+  red: '🟥',
+  purple: '🟪',
+  yellow: '🟨',
+  blue: '🟦',
+  orange: '🟧',
+  green: '🟩',
+};
+
 function makeCelebration(kind: CelebrationKind) {
   return {
     id: nextId(`cel-${kind}`),
     kind,
     timestamp: Date.now(),
+  };
+}
+
+/**
+ * Appends a concise 1-line entry to the rolling activity log, keeping the latest
+ * 8 entries with strictly Firebase RTDB-safe null fields (zero `undefined`).
+ */
+export function appendActivityLog(
+  log: readonly ActivityLogEntry[] | null | undefined,
+  entry: Omit<ActivityLogEntry, 'id' | 'timestamp'>
+): ActivityLogEntry[] {
+  const safeLog = Array.isArray(log) ? log : [];
+  const nextEntry: ActivityLogEntry = {
+    id: nextId('log'),
+    timestamp: Date.now(),
+    playerId: entry.playerId ?? null,
+    playerName: entry.playerName ?? null,
+    playerColor: entry.playerColor ?? null,
+    emoji: entry.emoji,
+    text: entry.text,
+  };
+  const updated = [...safeLog, nextEntry];
+  return updated.length > MAX_ACTIVITY_LOG_ENTRIES
+    ? updated.slice(updated.length - MAX_ACTIVITY_LOG_ENTRIES)
+    : updated;
+}
+
+function formatCardDrawLog(
+  player: PlayerState,
+  card: Card
+): Omit<ActivityLogEntry, 'id' | 'timestamp'> {
+  if (card.type === 'single' && card.color) {
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: COLOR_SQUARE_EMOJI[card.color],
+      text: `${player.name} drew ${card.label}`,
+    };
+  }
+  if (card.type === 'double') {
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '✨',
+      text: `${player.name} drew ${card.label}`,
+    };
+  }
+  if (card.type === 'landmark' && card.landmark) {
+    const meta = LANDMARK_META[card.landmark];
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: meta.emoji,
+      text: `${player.name} drew ${meta.label}!`,
+    };
+  }
+  if (card.type === 'action') {
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '🎭',
+      text: `${player.name} drew Action Card!`,
+    };
+  }
+  return {
+    playerId: player.id,
+    playerName: player.name,
+    playerColor: player.color,
+    emoji: '🌀',
+    text: `${player.name} drew Licorice Swirl!`,
   };
 }
 
@@ -79,6 +166,7 @@ export function normalizeRoomState(
           id: p.id,
           name: p.name ?? String(p.id),
           isKid: Boolean(p.isKid),
+          isAi: Boolean(p.isAi),
           color: p.color ?? '#ff5e99',
           accentColor: p.accentColor ?? '#ffd43b',
           portraitUrl: p.portraitUrl ?? `/images/portraits/${p.id}.png`,
@@ -124,6 +212,21 @@ export function normalizeRoomState(
       ? Math.max(0, Math.min(raw.currentPlayerIndex ?? 0, players.length - 1))
       : 0;
 
+  const activityLog: ActivityLogEntry[] = Array.isArray(raw.activityLog)
+    ? raw.activityLog
+        .filter((e): e is ActivityLogEntry => Boolean(e && typeof e.text === 'string'))
+        .map((e, idx) => ({
+          id: e.id ?? `log-${idx}`,
+          timestamp: typeof e.timestamp === 'number' ? e.timestamp : Date.now(),
+          playerId: e.playerId ?? null,
+          playerName: e.playerName ?? null,
+          playerColor: e.playerColor ?? null,
+          emoji: e.emoji ?? '✨',
+          text: e.text,
+        }))
+        .slice(-MAX_ACTIVITY_LOG_ENTRIES)
+    : [];
+
   return {
     roomCode: raw.roomCode,
     createdAt: raw.createdAt ?? Date.now(),
@@ -148,6 +251,7 @@ export function normalizeRoomState(
     cutscene: raw.cutscene ?? null,
     winnerId: raw.winnerId ?? null,
     celebration: raw.celebration ?? null,
+    activityLog,
     lastEventBanner: raw.lastEventBanner ?? null,
     lastEventId: raw.lastEventId ?? null,
     lastVoiceKey: raw.lastVoiceKey ?? null,
@@ -164,6 +268,7 @@ export function createPlayersFromCharacters(
     id: char.id,
     name: char.name,
     isKid: char.isKid,
+    isAi: Boolean(char.isAi),
     color: char.color,
     accentColor: char.accentColor,
     portraitUrl: char.portraitUrl,
@@ -212,6 +317,7 @@ export function createInitialRoomState(
     cutscene: null,
     winnerId: null,
     celebration: null,
+    activityLog: [],
     lastEventBanner: 'Pick your family characters to start the adventure!',
     lastEventId: nextId('lobby'),
     lastVoiceKey: 'event_welcome',
@@ -236,6 +342,15 @@ export function startGameState(
 
   const firstPlayer = resetPlayers[0];
   const now = Date.now();
+  const openingLog = firstPlayer
+    ? appendActivityLog([], {
+        playerId: firstPlayer.id,
+        playerName: firstPlayer.name,
+        playerColor: firstPlayer.color,
+        emoji: '✨',
+        text: `Adventure begins! ${firstPlayer.name}'s turn!`,
+      })
+    : [];
 
   return {
     ...state,
@@ -255,6 +370,7 @@ export function startGameState(
     cutscene: null,
     winnerId: null,
     celebration: null,
+    activityLog: openingLog,
     lastEventBanner: firstPlayer
       ? `Adventure begins! It's ${firstPlayer.name}'s turn!`
       : 'Adventure begins!',
@@ -476,6 +592,13 @@ export function applyDrawCard(
       phase: 'waiting-draw',
       currentCard: null,
       movement: null,
+      activityLog: appendActivityLog(state.activityLog, {
+        playerId: currentPlayer.id,
+        playerName: currentPlayer.name,
+        playerColor: currentPlayer.color,
+        emoji: '🎉',
+        text: `${currentPlayer.name} wiggled free from Licorice!`,
+      }),
       lastEventBanner: `${currentPlayer.name} wiggled free from Licorice Lagoon! Now it's ${nextPlayer.name}'s turn!`,
       lastEventId: nextId('licorice-free'),
       lastVoiceKey: nextIsStuck ? 'event_licorice_skip' : `turn_${nextPlayer.id}`,
@@ -505,6 +628,10 @@ export function applyDrawCard(
     currentCard: card,
     movement: null,
     celebration,
+    activityLog: appendActivityLog(
+      state.activityLog,
+      formatCardDrawLog(currentPlayer, card)
+    ),
     lastEventBanner: `${currentPlayer.name} drew ${card.label}!`,
     lastEventId: nextId('draw'),
     lastVoiceKey: getVoiceKeyForCard(card),
@@ -673,6 +800,13 @@ export function applyResolveDrawnCard(
     const updatedPlayers = state.players.map((p, idx) =>
       idx === state.currentPlayerIndex ? { ...p, stuckTurns: 1 } : p
     );
+    const stuckLog = appendActivityLog(state.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '🌀',
+      text: `${player.name} stuck in Licorice Lagoon!`,
+    });
     if (state.settings.enableCutscenes) {
       const cutscene = createCutsceneSession(
         'licorice-stuck',
@@ -686,13 +820,14 @@ export function applyResolveDrawnCard(
         players: updatedPlayers,
         phase: 'cutscene',
         cutscene,
+        activityLog: stuckLog,
         lastEventBanner: computed.banner,
         lastEventId: nextId('licorice-trap'),
         lastVoiceKey: cutscene.videoUrl ? null : 'event_licorice_stuck',
       };
     }
     return advanceToNextTurn(
-      { ...state, players: updatedPlayers },
+      { ...state, players: updatedPlayers, activityLog: stuckLog },
       `${player.name} got stuck in Licorice Lagoon for 1 turn!`
     );
   }
@@ -709,11 +844,23 @@ export function applyResolveDrawnCard(
     startedAt: Date.now(),
   };
 
+  const nextLog =
+    computed.isBackward && card.type === 'landmark' && card.landmark
+      ? appendActivityLog(state.activityLog, {
+          playerId: player.id,
+          playerName: player.name,
+          playerColor: player.color,
+          emoji: '↩️',
+          text: `${player.name} jumped back to ${LANDMARK_META[card.landmark].label}!`,
+        })
+      : state.activityLog;
+
   return {
     ...state,
     updatedAt: Date.now(),
     phase: 'moving',
     movement,
+    activityLog: nextLog,
     lastEventBanner: computed.banner,
     lastEventId: nextId('move-start'),
     lastVoiceKey: null,
@@ -752,10 +899,18 @@ export function applyMoveComplete(
 
   // 1. Victory at Candy Castle!
   if (clampedTile >= lastTileIndex || landedTile?.landmark === 'castle') {
+    const victoryLog = appendActivityLog(baseState.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '🏆',
+      text: `${player.name} reached Candy Castle!`,
+    });
     const victoryState: GameRoomState = {
       ...baseState,
       winnerId: player.id,
       celebration: makeCelebration('victory'),
+      activityLog: victoryLog,
       lastEventBanner: `🎉 ${player.name} reached Candy Castle and WON!!`,
       lastEventId: nextId('victory'),
       lastVoiceKey: `victory_${player.id}`,
@@ -784,14 +939,22 @@ export function applyMoveComplete(
 
   // 2. Shortcut celebration cutscene!
   if (movement.shortcutUsed) {
-    const cutsceneType: CutsceneType =
-      movement.shortcutUsed === 'peppermint-pass'
-        ? 'shortcut-peppermint'
-        : 'shortcut-gummy';
-    const voiceKey =
-      movement.shortcutUsed === 'peppermint-pass'
-        ? 'event_shortcut_peppermint'
-        : 'event_shortcut_gummy';
+    const isPeppermint = movement.shortcutUsed === 'peppermint-pass';
+    const cutsceneType: CutsceneType = isPeppermint
+      ? 'shortcut-peppermint'
+      : 'shortcut-gummy';
+    const voiceKey = isPeppermint
+      ? 'event_shortcut_peppermint'
+      : 'event_shortcut_gummy';
+    const shortcutLog = appendActivityLog(baseState.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: isPeppermint ? '⚡' : '🌈',
+      text: isPeppermint
+        ? `${player.name} zoomed Peppermint Pass!`
+        : `${player.name} zoomed Gummy Pass!`,
+    });
     const nextPhase: TurnPhase =
       landedTile?.isStarMiniGame && state.settings.enableMiniGames
         ? 'minigame'
@@ -809,6 +972,7 @@ export function applyMoveComplete(
         phase: 'cutscene',
         celebration: makeCelebration('shortcut'),
         cutscene,
+        activityLog: shortcutLog,
         lastEventBanner: `${player.name} zoomed through the shortcut!`,
         lastEventId: nextId('shortcut'),
         lastVoiceKey: cutscene.videoUrl ? null : voiceKey,
@@ -822,6 +986,7 @@ export function applyMoveComplete(
         celebration: makeCelebration('shortcut'),
         miniGame: createMiniGameSession(baseState, player),
         nextMiniGameIndex: baseState.nextMiniGameIndex + 1,
+        activityLog: shortcutLog,
         lastEventBanner: `Mini-Game Time for ${player.name}!`,
         lastEventId: nextId('mg-start'),
         lastVoiceKey: 'event_minigame_intro',
@@ -831,6 +996,7 @@ export function applyMoveComplete(
     return advanceToNextTurn({
       ...baseState,
       celebration: makeCelebration('shortcut'),
+      activityLog: shortcutLog,
       lastVoiceKey: voiceKey,
     });
   }
@@ -844,9 +1010,17 @@ export function applyMoveComplete(
     const stuckPlayers = updatedPlayers.map((p, idx) =>
       idx === playerIdx ? { ...p, stuckTurns: 1 } : p
     );
+    const stuckLog = appendActivityLog(baseState.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '🌀',
+      text: `${player.name} stuck in Licorice Lagoon!`,
+    });
     const stuckState: GameRoomState = {
       ...baseState,
       players: stuckPlayers,
+      activityLog: stuckLog,
       lastEventBanner: `Uh-oh! ${player.name} got stuck in Licorice Lagoon!`,
       lastEventId: nextId('licorice-land'),
       lastVoiceKey: 'event_licorice_stuck',
@@ -879,6 +1053,7 @@ export function applyMoveComplete(
       landedTile?.landmark === 'chocolate');
 
   if (shouldPlayLandmarkCutscene && landedTile) {
+    const landmarkMeta = LANDMARK_META[landedTile.landmark!];
     const type: CutsceneType =
       landedTile.landmark === 'lollipop'
         ? 'landmark-lollipop'
@@ -894,7 +1069,14 @@ export function applyMoveComplete(
       phase: 'cutscene',
       cutscene: createCutsceneSession(type, player, nextPhase, context),
       celebration: makeCelebration('card-reveal'),
-      lastEventBanner: `${player.name} arrived at ${LANDMARK_META[landedTile.landmark!].regionName}!`,
+      activityLog: appendActivityLog(baseState.activityLog, {
+        playerId: player.id,
+        playerName: player.name,
+        playerColor: player.color,
+        emoji: landmarkMeta.emoji,
+        text: `${player.name} reached ${landmarkMeta.regionName}!`,
+      }),
+      lastEventBanner: `${player.name} arrived at ${landmarkMeta.regionName}!`,
       lastEventId: nextId('landmark-cutscene'),
       lastVoiceKey: null,
     };
@@ -1039,6 +1221,15 @@ export function applyMiniGameComplete(
     miniGame: null,
     movement: path.length > 0 ? movement : null,
     celebration: won ? makeCelebration('minigame-win') : null,
+    activityLog: appendActivityLog(state.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: won ? '🌟' : '🍬',
+      text: won
+        ? `${player.name} won Mini-Game (+${bonusSpaces})`
+        : `${player.name} tried Mini-Game (+${bonusSpaces})`,
+    }),
     lastEventBanner: won
       ? `🌟 ${player.name} WON the mini-game (${finalScore} pts)! +${bonusSpaces} bonus spaces!`
       : `🍬 Great try, ${player.name}! +${bonusSpaces} sweet bonus space!`,
@@ -1061,14 +1252,25 @@ export function applyActionCardComplete(
   const playerIdx = state.players.findIndex((p) => p.id === session.playerId);
   if (playerIdx === -1) return advanceToNextTurn(state);
 
+  const player = state.players[playerIdx];
+
   if (!completed) {
     return advanceToNextTurn(
-      { ...state, actionCard: null },
+      {
+        ...state,
+        actionCard: null,
+        activityLog: appendActivityLog(state.activityLog, {
+          playerId: player.id,
+          playerName: player.name,
+          playerColor: player.color,
+          emoji: '⏭️',
+          text: `${session.playerName} skipped Action Card`,
+        }),
+      },
       `${session.playerName} passed on the action card. Next turn!`
     );
   }
 
-  const player = state.players[playerIdx];
   const bonusSpaces = Math.max(1, session.card.bonusSpaces);
   const lastTileIndex = getLastTileIndex(context.tiles);
   const targetTile = Math.min(player.tileIndex + bonusSpaces, lastTileIndex);
@@ -1105,6 +1307,13 @@ export function applyActionCardComplete(
     actionCard: null,
     movement: path.length > 0 ? movement : null,
     celebration: makeCelebration('action-complete'),
+    activityLog: appendActivityLog(state.activityLog, {
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      emoji: '🎭',
+      text: `${player.name} did ${session.card.title} (+${bonusSpaces})`,
+    }),
     lastEventBanner: `🎉 Awesome job, ${player.name}! +${bonusSpaces} bonus spaces!`,
     lastEventId: nextId('action-done'),
     lastVoiceKey: 'event_action_complete',
