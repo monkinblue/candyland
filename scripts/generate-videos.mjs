@@ -13,25 +13,17 @@ const CONCURRENCY = Number(
   process.argv.find((a) => a.startsWith('--concurrency='))?.split('=')[1] || 2
 );
 const PACE_MS = Number(
-  process.argv.find((a) => a.startsWith('--pace-ms='))?.split('=')[1] || 3000
+  process.argv.find((a) => a.startsWith('--pace-ms='))?.split('=')[1] || 4000
 );
 
 const MODEL = 'gemini-omni-1.2-flash';
 const INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
+// Strict generation priority order:
+// 1) Robert, Rita, Emma, Wyatt, Nana, Papa (core family priority)
+// 2) Grandpa, Bapci, Guest (complete original 9 cast -> 63/63)
+// 3) Mabel, Gina, Caroline, Ian, Emilia, Gnome (Kozlowski family + AI Gnome buddy)
 const CHARACTERS = [
-  {
-    id: 'wyatt',
-    desc: 'the adorable 4-year-old boy from the reference portrait with straight light-brown hair, rosy cheeks, bright joyful smile, wearing his cherry-red Candyland hoodie with a swirled peppermint pin and jeans',
-    crown: 'a sparkling golden candy crown',
-    cheer: 'happy kid giggles and cheers',
-  },
-  {
-    id: 'emma',
-    desc: 'the adorable 3-year-old girl from the reference portrait with wavy brown hair, sparkly pink bow on top, rosy cheeks, beaming smile, wearing her pastel pink-and-rainbow candy princess dress covered in colorful candy stars',
-    crown: 'a shimmering golden candy princess tiara',
-    cheer: 'delighted little-girl giggles and cheers',
-  },
   {
     id: 'robert',
     desc: 'the warm smiling bearded dad from the reference portrait with short sandy-blond hair, neatly trimmed light beard, friendly eyes, wearing his emerald-green Candyland explorer vest with a candy-cane pin over a cream tunic',
@@ -43,6 +35,30 @@ const CHARACTERS = [
     desc: 'the radiant smiling dark-haired mom from the reference portrait with long straight jet-black hair, warm joyful crinkled eyes, beaming smile, wearing her berry-pink and cream striped Candyland storybook jacket with pastel candy buttons',
     crown: 'a dazzling golden candy queen tiara',
     cheer: 'warm joyful laughter and cheers',
+  },
+  {
+    id: 'emma',
+    desc: 'the adorable 3-year-old girl from the reference portrait with wavy brown hair, sparkly pink bow on top, rosy cheeks, beaming smile, wearing her pastel pink-and-rainbow candy princess dress covered in colorful candy stars',
+    crown: 'a shimmering golden candy princess tiara',
+    cheer: 'delighted little-girl giggles and cheers',
+  },
+  {
+    id: 'wyatt',
+    desc: 'the adorable 4-year-old boy from the reference portrait with straight light-brown hair, rosy cheeks, bright joyful smile, wearing his cherry-red Candyland hoodie with a swirled peppermint pin and jeans',
+    crown: 'a sparkling golden candy crown',
+    cheer: 'happy kid giggles and cheers',
+  },
+  {
+    id: 'nana',
+    desc: 'the radiant smiling grandmother from the reference portrait with chin-to-shoulder wavy blonde hair and wispy bangs, big joyful toothy smile with happy eye crinkles, wearing her sunny yellow-and-white striped Candyland cardigan and pastel candy scarf',
+    crown: 'a sunny sparkling golden candy tiara',
+    cheer: 'bright joyful laughter and cheers',
+  },
+  {
+    id: 'papa',
+    desc: 'the jovial warm older gentleman from the reference portrait with thick wavy salt-and-pepper hair brushed back, prominent classic dark mustache, rosy tanned cheeks, huge beaming smile, wearing his sky-blue Candyland shirt with a big golden gummy star badge',
+    crown: 'a joyful gleaming golden candy crown',
+    cheer: 'booming jolly laughter and cheers',
   },
   {
     id: 'grandpa',
@@ -57,22 +73,46 @@ const CHARACTERS = [
     cheer: 'joyful warm laughter and cheers',
   },
   {
-    id: 'papa',
-    desc: 'the jovial warm older gentleman from the reference portrait with thick wavy salt-and-pepper hair brushed back, prominent classic dark mustache, rosy tanned cheeks, huge beaming smile, wearing his sky-blue Candyland shirt with a big golden gummy star badge',
-    crown: 'a joyful gleaming golden candy crown',
-    cheer: 'booming jolly laughter and cheers',
-  },
-  {
-    id: 'nana',
-    desc: 'the radiant smiling grandmother from the reference portrait with chin-to-shoulder wavy blonde hair and wispy bangs, big joyful toothy smile with happy eye crinkles, wearing her sunny yellow-and-white striped Candyland cardigan and pastel candy scarf',
-    crown: 'a sunny sparkling golden candy tiara',
-    cheer: 'bright joyful laughter and cheers',
-  },
-  {
     id: 'guest',
     desc: 'the adorable smiling gingerbread candy explorer character from the reference portrait with warm baked gingerbread cookie features, rosy gumdrop cheeks, big cheerful eyes, wearing a jaunty turquoise-and-white peppermint explorer hat and rainbow frosting bowtie',
     crown: 'a sparkling golden frosting crown',
     cheer: 'whimsical cheerful giggles and chimes',
+  },
+  {
+    id: 'mabel',
+    desc: 'the adorable smiling young blonde girl from the reference portrait with shoulder-length straight golden-blonde hair, a cute pink hair clip on the side, big warm hazel eyes, and a bright pink Candyland t-shirt covered in colorful candy sprinkles and a golden star badge',
+    crown: 'a sparkling pastel-pink and gold candy tiara',
+    cheer: 'delighted happy little-girl giggles and cheers',
+  },
+  {
+    id: 'gina',
+    desc: 'the radiant smiling blonde woman from the reference portrait with a wavy golden-blonde ponytail, a pastel lavender-and-mint candy bow headband, bright warm brown eyes, and a cream-and-lavender Candyland explorer shirt with a shimmering crystal candy button',
+    crown: 'a dazzling lavender-and-gold candy queen tiara',
+    cheer: 'bright joyful laughter and cheers',
+  },
+  {
+    id: 'caroline',
+    desc: 'the cheerful smiling young girl from the reference portrait with bouncy golden-blonde curls pulled up loosely, bright blue eyes, joyful wide smile, wearing a cream-and-orange Candyland raglan t-shirt covered in pastel rainbow lollipops and a pink wrapped-candy pin',
+    crown: 'a sunny sparkling golden candy princess tiara',
+    cheer: 'happy kid giggles and cheers',
+  },
+  {
+    id: 'ian',
+    desc: 'the friendly smiling dad from the reference portrait with short brushed-up dark-brown hair, warm brown eyes, cheerful grin, wearing a glossy royal-blue Candyland explorer jacket decorated with candy buttons and a peppermint compass badge over a light-blue collared shirt',
+    crown: 'a gleaming royal-blue and gold candy explorer crown',
+    cheer: 'warm hearty laughter and cheers',
+  },
+  {
+    id: 'emilia',
+    desc: 'the bright smiling blonde girl from the reference portrait with golden-blonde hair in a neat high side ponytail, warm hazel eyes, joyful smile, wearing a pastel floral-and-lollipop patterned sundress and a sparkly rainbow-pink crossbody bag',
+    crown: 'a shimmering rainbow-crystal candy princess tiara',
+    cheer: 'joyful excited giggles and cheers',
+  },
+  {
+    id: 'gnome',
+    desc: 'the adorable whimsical Candyland garden gnome from the reference portrait with a tall red-and-white peppermint striped pointed hat, fluffy curled snowy-white beard, bright twinkling green eyes, rosy cheeks, and a cozy mint-green and berry tunic with colorful candy buttons',
+    crown: 'a sparkling tiny golden candy crown perched atop his peppermint hat',
+    cheer: 'merry magical gnome giggles and twinkling chimes',
   },
 ];
 
@@ -199,7 +239,7 @@ function findVideoPayload(obj) {
 }
 
 function isDailyQuotaMessage(text) {
-  return /per day|daily|rpd|requests per day|quota exceeded|resource_exhausted/i.test(text || '');
+  return /per day|daily|rpd|requests per day/i.test(text || '');
 }
 
 const portraitCache = new Map();
@@ -370,17 +410,19 @@ async function generateWithRetry(job, apiKey, maxAttempts = 3) {
 
 async function main() {
   fs.mkdirSync(VIDEO_DIR, { recursive: true });
+  const totalSlots = CHARACTERS.length * SCENES.length;
   const initialValid = syncGeneratedVideosJson();
-  console.log(`Synced src/data/generatedVideos.json (${initialValid.length}/63 individualized clips valid on disk)`);
+  console.log(`Synced src/data/generatedVideos.json (${initialValid.length}/${totalSlots} individualized clips valid on disk)`);
 
   if (SYNC_ONLY) {
     return;
   }
 
   const apiKey = loadApiKey();
+  // Character-first priority ordering so Robert, Rita, Emma, Wyatt, Nana, and Papa finish 100% first!
   const allJobs = [];
-  for (const scene of SCENES) {
-    for (const ch of CHARACTERS) {
+  for (const ch of CHARACTERS) {
+    for (const scene of SCENES) {
       const id = `${scene.prefix}_${ch.id}`;
       const filename = `${id}.mp4`;
       allJobs.push({
@@ -412,17 +454,20 @@ async function main() {
   let completed = skipped;
   const failures = [];
   console.log(
-    `=== 63-Video Pipeline (${MODEL}) === total=${total}, skipped(valid)=${skipped}, toGenerate=${pending.length}, concurrency=${CONCURRENCY}`
+    `=== ${totalSlots}-Video Pipeline (${MODEL}) === total=${total}, skipped(valid)=${skipped}, toGenerate=${pending.length}, concurrency=${CONCURRENCY}`
+  );
+  console.log(
+    `First 15 queued: ${pending.slice(0, 15).map((j) => j.filename).join(', ')}`
   );
 
   if (pending.length === 0) {
-    console.log('All 63 individualized clips already exist and are valid MP4s!');
+    console.log(`All ${totalSlots} individualized clips already exist and are valid MP4s!`);
     return;
   }
 
   const queue = [...pending];
   const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async (_, idx) => {
-    await sleep(idx * 1000);
+    await sleep(idx * 1500);
     while (queue.length > 0 && !stopDueToQuota) {
       const job = queue.shift();
       try {
@@ -430,7 +475,7 @@ async function main() {
         completed++;
         const synced = syncGeneratedVideosJson();
         console.log(
-          `[ok ${completed}/${total}] ${job.filename} (${res.sizeMB} MB, ${res.secs}s) [manifest: ${synced.length}/63]`
+          `[ok ${completed}/${total}] ${job.filename} (${res.sizeMB} MB, ${res.secs}s) [manifest: ${synced.length}/${totalSlots}]`
         );
         if (PACE_MS > 0 && queue.length > 0 && !stopDueToQuota) await sleep(PACE_MS);
       } catch (err) {
@@ -445,15 +490,15 @@ async function main() {
 
   if (stopDueToQuota) {
     console.warn(
-      `\n=== PAUSED ON DAILY QUOTA (${finalValid.length}/63 individualized clips active in src/data/generatedVideos.json) ===`
+      `\n=== PAUSED ON DAILY QUOTA (${finalValid.length}/${totalSlots} individualized clips active in src/data/generatedVideos.json) ===`
     );
     console.warn(
-      `Remaining ${63 - finalValid.length} clips fall back seamlessly to shared scene videos. Re-run tomorrow: node scripts/generate-videos.mjs`
+      `Remaining ${totalSlots - finalValid.length} clips fall back seamlessly to shared scene videos. Re-run tomorrow: node scripts/generate-videos.mjs`
     );
     process.exit(0);
   }
 
-  console.log(`=== FINISHED: ${finalValid.length}/63 valid, ${failures.length} failed ===`);
+  console.log(`=== FINISHED: ${finalValid.length}/${totalSlots} valid, ${failures.length} failed ===`);
   if (failures.length > 0) {
     for (const f of failures) console.error(`  - ${f.filename}: ${f.error}`);
     process.exit(1);

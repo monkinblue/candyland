@@ -29,7 +29,13 @@ export const ALL_VIDEO_CHARACTER_IDS: readonly CharacterId[] = [
   'bapci',
   'papa',
   'nana',
+  'mabel',
+  'gina',
+  'caroline',
+  'ian',
+  'emilia',
   'guest',
+  'gnome',
 ] as const;
 
 export const CUTSCENE_SCENE_PREFIX: Record<CutsceneType, string> = {
